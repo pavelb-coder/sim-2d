@@ -46,3 +46,17 @@ export function nudge(obj: Obj, dx: number, dy: number): Obj {
 export function duplicate(obj: Obj, newId: string, dx = 5, dy = 5): Obj {
   return { ...obj, id: newId, transform: { ...obj.transform, e: obj.transform.e + dx, f: obj.transform.f + dy } };
 }
+
+/** Поворот на заданный угол относительно центра bbox. */
+export function rotateBy(obj: Obj, deg: number): Obj {
+  const current = (decompose(obj.transform).rotation * 180) / Math.PI;
+  return rotateTo(obj, current + deg);
+}
+
+/** Зеркальное отражение: 'h' — слева-направо, 'v' — сверху-вниз. */
+export function mirror(obj: Obj, axis: 'h' | 'v'): Obj {
+  const c = boxCenter(worldBBox(obj.path, obj.transform));
+  const s = axis === 'h' ? scaleM(-1, 1) : scaleM(1, -1);
+  const m = compose(translate(c.x, c.y), compose(s, compose(translate(-c.x, -c.y), obj.transform)));
+  return { ...obj, transform: m };
+}

@@ -6,3 +6,4 @@ scripts/_preview.mjs
 *.log
 .env.local
 .env
+tests/core.mjs

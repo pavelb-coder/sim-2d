@@ -16,6 +16,7 @@ export interface AppState {
   hover: Id | null;
   token: number;
   activeLayerId: Id;
+  alignRef: 'sheet' | 'selection';
 }
 
 type Listener = (state: AppState, kind: ChangeKind) => void;
@@ -36,6 +37,7 @@ export class Store {
       hover: null,
       token: 1,
       activeLayerId: doc.layers[0].id,
+      alignRef: 'selection',
     };
   }
 

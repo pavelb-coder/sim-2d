@@ -1,10 +1,11 @@
-import type { Doc, Obj } from '../core/types';
+import type { Doc, Id, Obj } from '../core/types';
 import { addObjToDoc, removeObjFromDoc, updateObjInDoc } from '../core/doc';
 
 export type Patch =
   | { kind: 'add'; obj: Obj }
   | { kind: 'remove'; obj: Obj }
-  | { kind: 'update'; before: Obj; after: Obj };
+  | { kind: 'update'; before: Obj; after: Obj }
+  | { kind: 'order'; before: Id[]; after: Id[] };
 
 export interface Command { label: string; patches: Patch[] }
 
@@ -13,6 +14,7 @@ export function applyPatches(doc: Doc, patches: Patch[]): Doc {
   for (const p of patches) {
     if (p.kind === 'add') next = addObjToDoc(next, p.obj);
     else if (p.kind === 'remove') next = removeObjFromDoc(next, p.obj.id);
+    else if (p.kind === 'order') next = { ...next, order: [...p.after] };
     else next = updateObjInDoc(next, p.after);
   }
   return next;
@@ -22,6 +24,7 @@ export function invertPatches(patches: Patch[]): Patch[] {
   return [...patches].reverse().map<Patch>((p) => {
     if (p.kind === 'add') return { kind: 'remove', obj: p.obj };
     if (p.kind === 'remove') return { kind: 'add', obj: p.obj };
+    if (p.kind === 'order') return { kind: 'order', before: p.after, after: p.before };
     return { kind: 'update', before: p.after, after: p.before };
   });
 }

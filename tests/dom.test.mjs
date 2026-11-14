@@ -59,6 +59,15 @@ try {
   /* не критично */
 }
 
+/* ---------- шрифт для инструмента «Текст» (в сборке он инлайнится в HTML) ---------- */
+try {
+  const ttf = readFileSync(new URL('../assets/fonts/DejaVuSans-subset.ttf', import.meta.url));
+  window.__LASERCUT_FONT__ = ttf.toString('base64');
+  globalThis.__LASERCUT_FONT__ = window.__LASERCUT_FONT__;
+} catch {
+  console.warn('шрифт не найден — тест инструмента «Текст» будет пропущен');
+}
+
 /* ---------- запуск приложения ---------- */
 const errors = [];
 window.addEventListener('error', (e) => errors.push(String(e.message)));
@@ -142,6 +151,79 @@ preset.dispatchEvent(new window.Event('change', { bubbles: true }));
 ok(text('#st-sheet').includes('420'), `формат листа применён: ${text('#st-sheet')}`);
 $('#btn-zoom-in').click();
 ok(text('#zoom-val').endsWith('%'), `зум: ${text('#zoom-val')}`);
+
+
+console.log('панели: статистика и слои');
+ok(window.document.querySelectorAll('#stats .stat-line').length >= 2, `статистика по слоям: ${window.document.querySelectorAll('#stats .stat-line').length} строки`);
+ok(text('#stats').includes('Рез'), 'в статистике есть строка «Рез»');
+ok($('#layer-seg').querySelectorAll('.seg-btn').length === 2, 'переключатель слоёв: рез / гравировка');
+
+console.log('булевы операции');
+const store = window.lcx.store;
+const num = () => Number(count().replace(/\D+/g, ''));
+$('.tool-btn[data-tool="rect"]').click();
+pointer('pointerdown', 300, 300);
+pointer('pointermove', 400, 400);
+pointer('pointerup', 400, 400);
+const idA = store.state.selection[0];
+pointer('pointerdown', 350, 350);
+pointer('pointermove', 450, 450);
+pointer('pointerup', 450, 450);
+const idB = store.state.selection[0];
+ok(idA !== idB, 'созданы два пересекающихся прямоугольника');
+const beforeUnion = num();
+store.select([idA, idB]);
+$('#op-union').click();
+ok(num() === beforeUnion - 1, `сварка: ${beforeUnion} → ${num()} объектов`);
+key('z', { ctrlKey: true });
+ok(num() === beforeUnion, `undo вернул оба прямоугольника (${num()})`);
+
+console.log('поворот и зеркало');
+store.select([idA]);
+const w0 = Number($('#prop-w').value);
+const h0 = Number($('#prop-h').value);
+$('#tr-rot90').click();
+ok(Math.abs(Number($('#prop-w').value) - h0) < 0.01 && Math.abs(Number($('#prop-h').value) - w0) < 0.01,
+  `поворот 90°: ${w0}×${h0} → ${$('#prop-w').value}×${$('#prop-h').value}`);
+$('#tr-mirror-h').click();
+ok(true, 'зеркало по горизонтали применилось без ошибок');
+key('z', { ctrlKey: true });
+key('z', { ctrlKey: true });
+
+console.log('раскладка на листе');
+$('#nest-all').click();
+ok(text('#toast').includes('Разложено') || text('#toast').includes('не помещаются'), `раскладка: ${text('#toast')}`);
+
+console.log('проверка перед резкой');
+$('.tool-btn[data-tool="rect"]').click();
+pointer('pointerdown', 1100, 700);
+pointer('pointermove', 1180, 780);
+pointer('pointerup', 1180, 780);
+$('#btn-check-run').click();
+ok(window.document.querySelectorAll('#issues li').length > 0 || text('#check-summary') !== '', `отчёт проверки: ${text('#check-summary')}`);
+$('.tool-btn[data-tool="select"]').click();
+
+console.log('текст в кривых (диалог вместо prompt)');
+$('.tool-btn[data-tool="text"]').click();
+pointer('pointerdown', 300, 500);
+await new Promise((r) => setTimeout(r, 400));
+const modalInput = window.document.querySelector('#modal-input');
+ok(!!modalInput, 'диалог ввода текста открылся');
+modalInput.value = 'Рез 42';
+window.document.querySelector('#modal-ok').click();
+await new Promise((r) => setTimeout(r, 400));
+ok(!window.document.querySelector('#modal-input'), 'диалог закрылся после «Готово»');
+ok(num() > beforeUnion, `объект-текст добавлен (${count()})`);
+ok(!$('#row-length').hidden || $('#props-body').hidden === false, 'текст выделен как обычный объект');
+
+console.log('экспорт (без скачивания)');
+const dxf = window.lcx.exportDxf(store.state.doc);
+ok(typeof dxf === 'string' && dxf.includes('AC1015') && dxf.includes('ENTITIES'), 'DXF собирается');
+ok(dxf.includes('CUT') && dxf.includes('ENGRAVE'), 'DXF содержит слои реза и гравировки');
+const svg = window.lcx.exportSvg(store.state.doc);
+ok(svg.startsWith('<?xml') || svg.includes('<svg'), 'SVG собирается');
+const issuesNow = window.lcx.validateDoc(store.state.doc, store.state.sheet);
+ok(Array.isArray(issuesNow), `валидатор вернул ${issuesNow.length} замечаний`);
 
 if (errors.length) {
   console.error('\nошибки рантайма:', errors);

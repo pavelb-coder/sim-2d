@@ -58,6 +58,8 @@ export interface ObjBase {
   name?: string;
   locked?: boolean;
   hidden?: boolean;
+  /** объекты одной группы выделяются вместе */
+  groupId?: Id | null;
 }
 
 export type Obj = ObjBase & { kind: 'path'; path: SubPath[] };

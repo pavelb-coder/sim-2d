@@ -2,6 +2,8 @@ import type { ToolId } from '../state/store';
 import type { Tool } from './tool';
 import { createSelectTool } from './select';
 import { createShapeTool } from './shape';
+import { nodeTool } from './node';
+import { textTool } from './text';
 
 export interface ToolDef {
   id: ToolId;
@@ -29,11 +31,11 @@ export const TOOL_DEFS: ToolDef[] = [
     icon: '<ellipse cx="10.5" cy="10.5" rx="6.8" ry="5" fill="none" stroke="currentColor" stroke-width="1.7"/>',
   },
   {
-    id: 'node', label: 'Узлы (S3)', key: 'N', available: false,
+    id: 'node', label: 'Узлы', key: 'N', available: true,
     icon: '<path d="M4 16c4-9 9-9 13 0" fill="none" stroke="currentColor" stroke-width="1.6"/><rect x="2.6" y="14.6" width="3" height="3" fill="currentColor"/><rect x="14.4" y="14.6" width="3" height="3" fill="currentColor"/>',
   },
   {
-    id: 'text', label: 'Текст (S5)', key: 'T', available: false,
+    id: 'text', label: 'Текст', key: 'T', available: true,
     icon: '<path d="M4 5h13M10.5 5v11" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round"/>',
   },
 ];
@@ -41,8 +43,10 @@ export const TOOL_DEFS: ToolDef[] = [
 export function createTools(): Record<string, Tool> {
   return {
     select: createSelectTool(),
+    node: nodeTool,
     line: createShapeTool('line'),
     rect: createShapeTool('rect'),
     ellipse: createShapeTool('ellipse'),
+    text: textTool,
   };
 }

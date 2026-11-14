@@ -5,9 +5,11 @@ import { setBBox, rotateTo } from '../state/edits';
 import { updateCmd } from '../state/history';
 import { pathLength, transformSubPaths, worldBBox } from '../core/geom/path';
 import { decompose } from '../core/geom/transform';
+import type { Issue } from '../core/validate';
 import type { Obj, Op } from '../core/types';
-import { uid } from '../core/shape';
-import { duplicate } from '../state/edits';
+
+export type ExportKind = 'dxf' | 'dxf12' | 'svg' | 'png' | 'project';
+export type NodeOp = 'curve' | 'line' | 'close' | 'break' | 'delete';
 
 export interface UIActions {
   undo(): void;
@@ -15,10 +17,27 @@ export interface UIActions {
   zoom(factor: number): void;
   fit(): void;
   demo(): void;
+  clearSheet(): void;
   duplicate(): void;
   deleteSelection(): void;
   setTool(id: ToolId): void;
-  refresh(): void;
+  openFile(): void;
+  exportAs(kind: ExportKind): void;
+  runCheck(): void;
+  focusIssue(issue: Issue): void;
+  align(mode: 'left' | 'hcenter' | 'right' | 'bottom' | 'vcenter' | 'top'): void;
+  distribute(axis: 'x' | 'y'): void;
+  booleanOp(op: 'union' | 'diff' | 'intersect' | 'xor'): void;
+  offset(delta: number): void;
+  duplicatePattern(mode: 'row' | 'circle'): void;
+  group(): void;
+  ungroup(): void;
+  reorder(dir: 'front' | 'back'): void;
+  nodeOp(op: NodeOp): void;
+  setTextHeight(mm: number): void;
+  transform(kind: 'rot90' | 'rot-90' | 'mirrorH' | 'mirrorV'): void;
+  nest(all: boolean, opts: { gap: number; margin: number; allowRotate: boolean }): void;
+  toast(text: string): void;
 }
 
 const $ = <T extends HTMLElement>(id: string): T => document.getElementById(id) as T;
@@ -34,21 +53,18 @@ const setVal = (id: string, v: number): void => {
 };
 
 export function initUI(store: Store, actions: UIActions): void {
-  /* ---------- панель инструментов ---------- */
+  /* ---------- инструменты ---------- */
   const toolbar = $('toolbar');
   for (const def of TOOL_DEFS) {
     const btn = document.createElement('button');
     btn.className = 'tool-btn';
     btn.dataset.tool = def.id;
-    btn.title = def.available ? `${def.label} (${def.key})` : `${def.label} — следующий шаг`;
-    btn.disabled = !def.available;
+    btn.title = `${def.label} (${def.key})`;
+    btn.setAttribute('aria-label', def.label);
     btn.innerHTML = `<svg viewBox="0 0 21 21" aria-hidden="true">${def.icon}</svg><span class="key">${def.key}</span>`;
     btn.addEventListener('click', () => actions.setTool(def.id));
     toolbar.appendChild(btn);
   }
-  const sep = document.createElement('div');
-  sep.className = 'toolbar-sep';
-  toolbar.appendChild(sep);
 
   /* ---------- шапка ---------- */
   $('btn-undo').addEventListener('click', actions.undo);
@@ -57,9 +73,26 @@ export function initUI(store: Store, actions: UIActions): void {
   $('btn-zoom-out').addEventListener('click', () => actions.zoom(1 / 1.25));
   $('btn-fit').addEventListener('click', actions.fit);
   $('zoom-val').addEventListener('click', actions.fit);
+  $('btn-open').addEventListener('click', actions.openFile);
+  $('btn-check').addEventListener('click', actions.runCheck);
+  $('btn-check-run').addEventListener('click', actions.runCheck);
   $('btn-demo').addEventListener('click', actions.demo);
-  $('btn-duplicate').addEventListener('click', actions.duplicate);
-  $('btn-delete').addEventListener('click', actions.deleteSelection);
+  $('btn-clear').addEventListener('click', actions.clearSheet);
+
+  const saveBtn = $('btn-save');
+  const saveMenu = $('menu-save');
+  saveBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    saveMenu.hidden = !saveMenu.hidden;
+    saveBtn.setAttribute('aria-expanded', String(!saveMenu.hidden));
+  });
+  saveMenu.addEventListener('click', (e) => {
+    const btn = (e.target as HTMLElement).closest<HTMLButtonElement>('button[data-export]');
+    if (!btn) return;
+    saveMenu.hidden = true;
+    actions.exportAs(btn.dataset.export as ExportKind);
+  });
+  document.addEventListener('click', () => { saveMenu.hidden = true; });
 
   /* ---------- лист ---------- */
   const presetSel = $<HTMLSelectElement>('sheet-preset');
@@ -71,43 +104,86 @@ export function initUI(store: Store, actions: UIActions): void {
   }
   presetSel.addEventListener('change', () => {
     const [w, h] = presetSel.value.split('x').map(Number);
-    if (w && h) { store.updateSheet({ width: w, height: h }); actions.refresh(); }
+    if (w && h) { store.updateSheet({ width: w, height: h }); actions.fit(); }
   });
   $('sheet-w').addEventListener('change', () => store.updateSheet({ width: Math.max(10, val('sheet-w')) }));
   $('sheet-h').addEventListener('change', () => store.updateSheet({ height: Math.max(10, val('sheet-h')) }));
-  $<HTMLSelectElement>('grid-step').addEventListener('change', (e) => {
-    store.updateSheet({ gridStep: Number((e.target as HTMLSelectElement).value) });
-  });
+  $<HTMLSelectElement>('grid-step').addEventListener('change', (e) => store.updateSheet({ gridStep: Number((e.target as HTMLSelectElement).value) }));
   $<HTMLInputElement>('chk-grid').addEventListener('change', (e) => store.updateSheet({ showGrid: (e.target as HTMLInputElement).checked }));
   $<HTMLInputElement>('chk-snap-grid').addEventListener('change', (e) => store.updateSheet({ snapGrid: (e.target as HTMLInputElement).checked }));
   $<HTMLInputElement>('chk-snap-obj').addEventListener('change', (e) => store.updateSheet({ snapObjects: (e.target as HTMLInputElement).checked }));
 
-  /* ---------- свойства объекта ---------- */
+  /* ---------- свойства ---------- */
   const applyGeometry = (): void => {
     const objs = store.selected();
-    if (objs.length !== 1) return; // для группы правим только перемещением/удалением
-    const pairs = objs.map((o) => ({ before: o, after: setBBox(o, { x: val('prop-x'), y: val('prop-y'), w: val('prop-w'), h: val('prop-h') }) }));
+    if (objs.length !== 1) return;
+    const pairs = [{ before: objs[0], after: setBBox(objs[0], { x: val('prop-x'), y: val('prop-y'), w: val('prop-w'), h: val('prop-h') }) }];
     store.commit(updateCmd('Размер и положение', pairs));
   };
-  for (const id of ['prop-x', 'prop-y', 'prop-w', 'prop-h']) {
-    $(id).addEventListener('change', applyGeometry);
-  }
+  for (const id of ['prop-x', 'prop-y', 'prop-w', 'prop-h']) $(id).addEventListener('change', applyGeometry);
   $('prop-rot').addEventListener('change', () => {
     const objs = store.selected();
-    if (!objs.length) return;
-    const deg = val('prop-rot');
-    store.commit(updateCmd('Поворот', objs.map((o) => ({ before: o, after: rotateTo(o, deg) }))));
+    if (objs.length !== 1) return;
+    store.commit(updateCmd('Поворот', [{ before: objs[0], after: rotateTo(objs[0], val('prop-rot')) }]));
   });
 
+  /* ---------- операции ---------- */
+  const bind = (id: string, fn: () => void): void => $(id).addEventListener('click', () => { fn(); actions.runCheck(); });
+  bind('op-union', () => actions.booleanOp('union'));
+  bind('op-diff', () => actions.booleanOp('diff'));
+  bind('op-intersect', () => actions.booleanOp('intersect'));
+  bind('op-xor', () => actions.booleanOp('xor'));
+  bind('op-offset-out', () => actions.offset(Math.abs(val('offset-mm'))));
+  bind('op-offset-in', () => actions.offset(-Math.abs(val('offset-mm'))));
+  bind('dup-row', () => actions.duplicatePattern('row'));
+  bind('dup-circle', () => actions.duplicatePattern('circle'));
+  bind('grp-group', () => actions.group());
+  bind('grp-ungroup', () => actions.ungroup());
+  bind('z-front', () => actions.reorder('front'));
+  bind('z-back', () => actions.reorder('back'));
+  $('btn-duplicate').addEventListener('click', actions.duplicate);
+  $('btn-delete').addEventListener('click', actions.deleteSelection);
+
+  $('align-grid').addEventListener('click', (e) => {
+    const btn = (e.target as HTMLElement).closest<HTMLButtonElement>('button[data-align]');
+    if (!btn) return;
+    const mode = btn.dataset.align as 'left' | 'hcenter' | 'right' | 'bottom' | 'vcenter' | 'top';
+    store.state.alignRef = ($<HTMLSelectElement>('align-ref').value as 'sheet' | 'selection');
+    actions.align(mode);
+  });
+
+  $('dist-x').addEventListener('click', () => actions.distribute('x'));
+  $('dist-y').addEventListener('click', () => actions.distribute('y'));
+
+  /* ---------- узлы ---------- */
+  bind('node-curve', () => actions.nodeOp('curve'));
+  bind('node-line', () => actions.nodeOp('line'));
+  bind('node-close', () => actions.nodeOp('close'));
+  bind('node-break', () => actions.nodeOp('break'));
+  bind('node-delete', () => actions.nodeOp('delete'));
+
+  /* ---------- поворот и зеркало ---------- */
+  $('tr-rot90').addEventListener('click', () => actions.transform('rot90'));
+  $('tr-rot-90').addEventListener('click', () => actions.transform('rot-90'));
+  $('tr-mirror-h').addEventListener('click', () => actions.transform('mirrorH'));
+  $('tr-mirror-v').addEventListener('click', () => actions.transform('mirrorV'));
+
+  /* ---------- раскладка ---------- */
+  const nestOpts = () => ({
+    gap: Math.max(0, val('nest-gap')),
+    margin: Math.max(0, val('nest-margin')),
+    allowRotate: $<HTMLInputElement>('nest-rotate').checked,
+  });
+  $('nest-selected').addEventListener('click', () => actions.nest(false, nestOpts()));
+  $('nest-all').addEventListener('click', () => actions.nest(true, nestOpts()));
+
   /* ---------- слой и стиль ---------- */
-  const layerSeg = $('layer-seg');
-  layerSeg.addEventListener('click', (e) => {
+  $('layer-seg').addEventListener('click', (e) => {
     const btn = (e.target as HTMLElement).closest<HTMLButtonElement>('.seg-btn');
     if (!btn) return;
     const op = btn.dataset.layerOp as Op;
     const layer = store.state.doc.layers.find((l) => l.op === op);
     if (layer) store.moveSelectionToLayer(layer.id);
-    actions.refresh();
   });
 
   const applyStyle = (patch: Partial<Obj['style']>): void => {
@@ -126,7 +202,9 @@ export function initUI(store: Store, actions: UIActions): void {
     if ($<HTMLInputElement>('chk-fill').checked) applyStyle({ fill: (e.target as HTMLInputElement).value });
   });
 
-  /* ---------- синхронизация UI со состоянием ---------- */
+  $('text-height').addEventListener('change', () => actions.setTextHeight(val('text-height')));
+
+  /* ---------- синхронизация ---------- */
   function sync(state: AppState): void {
     for (const btn of toolbar.querySelectorAll<HTMLButtonElement>('.tool-btn')) {
       btn.classList.toggle('is-active', btn.dataset.tool === state.tool);
@@ -146,33 +224,27 @@ export function initUI(store: Store, actions: UIActions): void {
     const objs = store.selected();
     const body = $('props-body');
     const empty = $('props-empty');
+    const note = $('group-note');
     if (!objs.length) {
-      $('group-note').hidden = true;
-      body.hidden = true;
-      empty.hidden = false;
+      body.hidden = true; empty.hidden = false; note.hidden = true;
     } else {
-      body.hidden = false;
-      empty.hidden = true;
+      body.hidden = false; empty.hidden = true;
       const single = objs.length === 1;
-      const box = single
-        ? worldBBox(objs[0].path, objs[0].transform)
-        : unionBox(objs);
-      setVal('prop-x', box.x);
-      setVal('prop-y', box.y);
-      setVal('prop-w', box.w);
-      setVal('prop-h', box.h);
-      const rot = (decompose(objs[0].transform).rotation * 180) / Math.PI;
-      setVal('prop-rot', Math.round(rot * 100) / 100);
+      note.hidden = single;
+      const box = single ? worldBBox(objs[0].path, objs[0].transform) : unionBox(objs);
+      setVal('prop-x', box.x); setVal('prop-y', box.y);
+      setVal('prop-w', box.w); setVal('prop-h', box.h);
+      setVal('prop-rot', Math.round((decompose(objs[0].transform).rotation * 180) / Math.PI * 100) / 100);
       const isLine = single && objs[0].path.length === 1 && objs[0].path[0].segs.length === 1 && objs[0].path[0].segs[0].t === 'l';
       $('row-length').hidden = !isLine;
       if (isLine) $('prop-len').textContent = `${pathLength(transformSubPaths(objs[0].path, objs[0].transform)).toFixed(2)} мм`;
       for (const id of ['prop-x', 'prop-y', 'prop-w', 'prop-h', 'prop-rot']) $<HTMLInputElement>(id).disabled = !single;
-      $('props-empty').hidden = true;
-      $('group-note').hidden = single;
     }
 
+    $('block-nodes').hidden = state.tool !== 'node';
+
     const activeOp = store.activeLayer().op;
-    for (const btn of layerSeg.querySelectorAll<HTMLButtonElement>('.seg-btn')) {
+    for (const btn of $('layer-seg').querySelectorAll<HTMLButtonElement>('.seg-btn')) {
       btn.classList.toggle('is-active', btn.dataset.layerOp === activeOp);
     }
     const srgb = $<HTMLInputElement>('stroke-color');
@@ -186,8 +258,7 @@ export function initUI(store: Store, actions: UIActions): void {
       $('row-fill').hidden = !objs[0].style.fill;
       if (objs[0].style.fill && document.activeElement !== fcol) fcol.value = toHex(objs[0].style.fill);
     } else {
-      const layer = store.activeLayer();
-      if (document.activeElement !== srgb) srgb.value = toHex(layer.color);
+      if (document.activeElement !== srgb) srgb.value = toHex(store.activeLayer().color);
       fill.checked = false;
       $('row-fill').hidden = true;
     }
@@ -197,6 +268,51 @@ export function initUI(store: Store, actions: UIActions): void {
 
   store.subscribe(() => sync(store.state));
   sync(store.state);
+}
+
+export function setIssues(issues: Issue[]): void {
+  const list = $('issues');
+  list.innerHTML = '';
+  for (const issue of issues) {
+    const li = document.createElement('li');
+    li.className = issue.severity;
+    li.textContent = issue.message;
+    li.title = 'Показать объект';
+    li.addEventListener('click', () => {
+      const ev = new CustomEvent('lcx:focus-issue', { detail: issue });
+      window.dispatchEvent(ev);
+    });
+    list.appendChild(li);
+  }
+  const errors = issues.filter((i) => i.severity === 'error').length;
+  const badge = $('check-badge');
+  const summary = $('check-summary');
+  badge.textContent = String(issues.length);
+  badge.className = `pill ${errors ? 'is-error' : issues.length ? 'is-warn' : 'is-ok'}`;
+  summary.textContent = issues.length ? `${issues.length}` : 'чисто';
+  const st = document.getElementById('st-check');
+  if (st) st.textContent = issues.length ? `проверка: ${errors ? `${errors} ошибок` : `${issues.length} замечаний`}` : 'проверка: чисто';
+}
+
+export function setStats(rows: { label: string; value: string }[]): void {
+  const box = document.getElementById('stats');
+  if (!box) return;
+  box.innerHTML = '';
+  for (const row of rows) {
+    const line = document.createElement('div');
+    line.className = 'stat-line';
+    const l = document.createElement('span');
+    l.textContent = row.label;
+    const v = document.createElement('b');
+    v.textContent = row.value;
+    line.append(l, v);
+    box.appendChild(line);
+  }
+}
+
+export function setAutosaveStatus(text: string): void {
+  const el = document.getElementById('autosave-status');
+  if (el) el.textContent = `Автосохранение: ${text}`;
 }
 
 function unionBox(objs: Obj[]): { x: number; y: number; w: number; h: number } {
@@ -214,8 +330,4 @@ function toHex(color: string): string {
   const m = color.match(/^#([0-9a-f]{3})$/i);
   if (m) return `#${m[1].split('').map((c) => c + c).join('')}`;
   return '#e0413c';
-}
-
-export function makeDuplicateParams(objs: Obj[]): { before: Obj; after: Obj }[] {
-  return objs.map((o) => ({ before: o, after: duplicate(o, uid()) }));
 }

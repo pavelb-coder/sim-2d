@@ -1,6 +1,6 @@
 {
   "name": "lasercut-studio",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "main": "index.js",
   "directories": {
     "test": "tests"
@@ -8,22 +8,29 @@
   "scripts": {
     "build": "node build.mjs",
     "typecheck": "tsc --noEmit",
-    "test": "esbuild tests/geom.test.ts --bundle --platform=node --format=esm --outfile=tests/out.mjs --log-level=warning && node tests/out.mjs",
+    "test": "npm run test:geom && npm run test:core",
     "test:dom": "esbuild src/main.ts --bundle --format=esm --outfile=tests/_main.mjs --log-level=warning && node tests/dom.test.mjs",
     "serve": "node scripts/serve.mjs",
-    "check": "npm run typecheck && npm run test && npm version --json > /dev/null || true",
+    "check": "npm run typecheck && npm run test",
     "sync": "node scripts/sync.mjs",
-    "start": "node scripts/serve.mjs"
+    "start": "node scripts/serve.mjs",
+    "test:geom": "esbuild tests/geom.test.ts --bundle --platform=node --format=esm --outfile=tests/out.mjs --log-level=warning && node tests/out.mjs",
+    "test:core": "esbuild tests/core.test.ts --bundle --platform=node --format=esm --outfile=tests/core.mjs --log-level=warning && node tests/core.mjs",
+    "test:all": "npm run typecheck && npm run test && npm run test:dom"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "description": "Браузерный векторный редактор для лазерной резки: мм 1:1, DXF/SVG (прототип S1)",
+  "description": "Браузерный векторный редактор для лазерной резки: мм 1:1, DXF/SVG, узлы, булевы операции, раскладка, проверка перед резкой",
   "devDependencies": {
     "esbuild": "^0.28.2",
     "jsdom": "^29.1.1",
     "typescript": "^7.0.2"
   },
   "private": true,
-  "type": "module"
+  "type": "module",
+  "dependencies": {
+    "clipper-lib": "^6.4.2",
+    "opentype.js": "^2.0.0"
+  }
 }

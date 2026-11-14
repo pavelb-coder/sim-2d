@@ -4,9 +4,12 @@
  *   npm run sync                     # авто-сообщение коммита
  *   npm run sync -- "текст коммита"  # своё сообщение
  *
- * После отправки основной ветки скрипт обновляет зеркальные ветки: вливает в них
- * свежий main и пушит. Список берётся из GIT_MIRROR_BRANCHES (по умолчанию
- * "moodle-plugin") — так ветка с плагином Moodle никогда не отстаёт от main.
+ * Пушится та ветка, в которой вы работаете:
+ *   • в main   → после пуша обновляются зеркальные ветки (в них вливается main);
+ *   • в зеркале → в него подтягивается свежий main, если он ушёл вперёд.
+ * Список зеркал — GIT_MIRROR_BRANCHES в .env.local (по умолчанию "moodle-plugin"),
+ * поэтому ветка с плагином Moodle никогда не отстаёт от main и наоборот.
+ * Так правки плагина не «протекают» в main, а main остаётся чистым редактором.
  *
  * Токен берётся из .env.local (в .gitignore) или из переменной окружения GITHUB_TOKEN.
  * В git-историю и в логи токен не попадает.
@@ -122,30 +125,53 @@ try {
   }
   const pushUrl = `https://x-access-token:${token}@github.com/${repo}.git`;
   const startBranch = run(['rev-parse', '--abbrev-ref', 'HEAD']);
+  // Пушим ту ветку, в которой работаем, а не всегда в main: иначе правки плагина
+  // из ветки moodle-plugin уехали бы в main, а он должен оставаться чистым (редактор).
+  const target = startBranch === 'HEAD' ? branch : startBranch;
+  const isMirrorBranch = target !== branch && mirrors.includes(target);
 
-  // 1. Основная ветка
   run(['add', '-A']);
   const staged = run(['diff', '--cached', '--name-only']);
-  let mainPushed = false;
-  if (!staged) {
-    const ahead = Number(run(['rev-list', '--count', `origin/${branch}..HEAD`]) || 0);
-    if (ahead === 0) {
-      console.log('Нечего синхронизировать: рабочее дерево чистое, локальных коммитов нет.');
-    } else {
-      console.log(`Незапушенных коммитов: ${ahead} — отправляю.`);
-      run(['push', pushUrl, `HEAD:${branch}`], { stdio: ['ignore', 'pipe', 'pipe'] });
-      mainPushed = true;
-    }
-  } else {
+  let pushed = false;
+  if (staged) {
     const files = staged.split('\n').length;
     const msg = process.argv.slice(2).join(' ') || `sync: ${new Date().toISOString().slice(0, 16).replace('T', ' ')}`;
     run(['commit', '-m', msg]);
     console.log(`Коммит: ${msg}  (${files} файл(ов))`);
-    run(['push', pushUrl, `HEAD:${branch}`], { stdio: ['ignore', 'pipe', 'pipe'] });
-    mainPushed = true;
+    pushed = true;
+  } else {
+    const ahead = Number(tryRun(['rev-list', '--count', `origin/${target}..HEAD`]) || 0);
+    if (ahead > 0) {
+      console.log(`Незапушенных коммитов: ${ahead} — отправляю.`);
+      pushed = true;
+    }
   }
-  if (mainPushed) {
-    console.log(`Отправлено в ${repo} → ${branch}: ${run(['rev-parse', '--short', 'HEAD'])}`);
+
+  if (pushed) {
+    run(['push', pushUrl, `HEAD:${target}`], { stdio: ['ignore', 'pipe', 'pipe'] });
+    console.log(`Отправлено в ${repo} → ${target}: ${run(['rev-parse', '--short', 'HEAD'])}`);
+  } else if (!isMirrorBranch) {
+    console.log('Нечего синхронизировать: рабочее дерево чистое, локальных коммитов нет.');
+  }
+
+  if (isMirrorBranch) {
+    // Работаем в ветке-зеркале: подтягиваем в неё main, если он ушёл вперёд.
+    const tracking = 'refs/remotes/origin/main';
+    attempt(['fetch', pushUrl, `+refs/heads/${branch}:${tracking}`], { stdio: ['ignore', 'pipe', 'pipe'] });
+    const behind = Number(tryRun(['rev-list', '--count', `HEAD..${tracking}`]) || 0);
+    if (behind === 0) {
+      console.log(`Ветка ${target}: main уже влит, всё актуально.`);
+    } else {
+      try {
+        run(['merge', '-q', '--no-edit', '-m', `chore(sync): ${branch} → ${target}`, tracking]);
+        run(['push', pushUrl, `HEAD:${target}`], { stdio: ['ignore', 'pipe', 'pipe'] });
+        console.log(`Ветка ${target}: влито ${behind} коммит(ов) из ${branch}, HEAD ${run(['rev-parse', '--short', 'HEAD'])}`);
+      } catch (err) {
+        tryRun(['merge', '--abort']);
+        throw new Error(`конфликт при слиянии ${branch} в ${target}: разрешите вручную`);
+      }
+    }
+    process.exit(0);
   }
 
   // 2. Зеркальные ветки: всегда подтягиваем к свежему main

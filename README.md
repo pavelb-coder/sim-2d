@@ -16,14 +16,52 @@ GitHub Pages отдаёт папку `/docs` (там `docs/index.html` — та 
 
 ## Запуск
 
+Порт по умолчанию — **8084** (`http://localhost:8084`).
+
+### Windows
+
+Двойной клик по `start.bat` — он проверит Node.js, поставит зависимости, соберёт и откроет браузер.
+
+Или в PowerShell:
+```powershell
+npm install      :: один раз
+npm run build
+npm run serve    :: http://localhost:8084
+```
+Нужен Node.js 18+ ([nodejs.org](https://nodejs.org/ru), LTS). Python не требуется.
+
+### Ubuntu / Linux / macOS
+
 ```bash
-npm install          # esbuild, typescript, jsdom (dev)
-npm run build        # собирает самодостаточный site/index.html
-npm run serve        # http://localhost:8080
+chmod +x start.sh && ./start.sh
 ```
 
-`site/index.html` — один файл, CSS и JS инлайнятся. Открывается двойным кликом, работает офлайн,
-не тянет ни одной внешней зависимости (ни шрифтов, ни CDN).
+Или вручную:
+```bash
+sudo apt update && sudo apt install -y nodejs npm   # если Node ещё нет (нужен 18+)
+npm install
+npm run build
+npm run serve          # http://localhost:8084
+PORT=9000 npm run serve   # другой порт
+```
+
+Сервер (`scripts/serve.mjs`) написан на чистом Node без зависимостей, поэтому одинаково
+работает на обеих ОС. Слушает `0.0.0.0`, так что доступен и с других машин в сети:
+`http://<ip-компьютера>:8084`.
+
+### Синхронизация с GitHub
+
+Авторизация сохранена (`.env.local`, файл в `.gitignore` — в репозиторий не попадает).
+Одна команда делает сборку-коммит-пуш:
+
+```bash
+npm run sync                          # авто-сообщение коммита
+npm run sync -- "feat: узлы и правка"  # своё сообщение
+```
+
+Скрипт `scripts/sync.mjs`: `git add -A` → `commit` → `push` в `pavelb-coder/sim-2d` (ветка `main`).
+Токен подставляется только в URL пуша, в `.git/config` и в историю не пишется.
+Если токен истёк — замените строку `GITHUB_TOKEN=` в `.env.local`.
 
 ## Проверки
 

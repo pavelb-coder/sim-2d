@@ -10,8 +10,10 @@
     "typecheck": "tsc --noEmit",
     "test": "esbuild tests/geom.test.ts --bundle --platform=node --format=esm --outfile=tests/out.mjs --log-level=warning && node tests/out.mjs",
     "test:dom": "esbuild src/main.ts --bundle --format=esm --outfile=tests/_main.mjs --log-level=warning && node tests/dom.test.mjs",
-    "serve": "python3 -m http.server 8080 --bind 0.0.0.0 --directory site",
-    "check": "npm run typecheck && npm run test && npm version --json > /dev/null || true"
+    "serve": "node scripts/serve.mjs",
+    "check": "npm run typecheck && npm run test && npm version --json > /dev/null || true",
+    "sync": "node scripts/sync.mjs",
+    "start": "node scripts/serve.mjs"
   },
   "keywords": [],
   "author": "",

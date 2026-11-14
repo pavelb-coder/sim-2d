@@ -7,6 +7,7 @@
 - **Живая версия:** https://pavelb-coder.github.io/sim-2d/
 - **Репозиторий:** https://github.com/pavelb-coder/sim-2d
 - **Локально:** http://localhost:8084
+- **Плагин для Moodle:** [`moodle/mod/lasercutstudio`](moodle/mod/lasercutstudio/README.md) — тот же редактор как элемент курса со сдачей и оценкой
 
 ![Демо-макет: пластина с отверстиями, гравировка, поворот и раскладка](docs/preview-v1.svg)
 
@@ -135,6 +136,35 @@ npm run test:all     # всё вместе
 
 ---
 
+## Плагин для Moodle (`mod_lasercutstudio`)
+
+Тот же редактор, упакованный в активный модуль курса Moodle: студент рисует макет на странице
+элемента курса и сдаёт `.lcx`, преподаватель смотрит сдачи и ставит оценку в журнал.
+
+| Что | Где |
+|---|---|
+| Исходники плагина | `moodle/mod/lasercutstudio/` |
+| Документация плагина | `moodle/mod/lasercutstudio/README.md` |
+| Сборка редактора внутрь плагина | `npm run moodle:editor` |
+| Статическая проверка плагина | `npm run moodle:check` |
+| Смоук-тест на живом Moodle | `php -d max_input_vars=5000 scripts/moodle-smoke.php --moodleroot=/path/to/moodle` |
+
+```bash
+npm run build && npm run moodle:editor   # пересобрать редактор и положить его в плагин
+npm run moodle:check                     # php -l, XML, строки en/ru, права, таблицы, сборка
+```
+
+Установка: скопировать `moodle/mod/lasercutstudio` в `<moodle>/mod/lasercutstudio`,
+затем `php admin/cli/upgrade.php --non-interactive`. Требуется `max_input_vars >= 5000`.
+
+Проверено на Moodle 5.0.11 / PHP 8.4: смоук-тест **23/23** (создание элемента, элемент журнала,
+сдача и пересдача, файлы в filearea, оценка в журнале, Privacy API, события, backup/restore
+курса вместе с файлами, удаление экземпляра), плюс ручной проход по HTTP: страница элемента,
+редактор в iframe, сдача формы, скачивание `.lcx`, таблица преподавателя и выставление оценки.
+
+> Moodle 4.5 с PHP 8.4 не запускается вовсе (ограничение ядра) — для проверки нужен Moodle 5.0+
+> либо PHP 8.1–8.3.
+
 ## Синхронизация с GitHub
 
 Авторизация сохранена в `.env.local` (файл в `.gitignore`, в репозиторий не попадает):
@@ -190,8 +220,12 @@ tests/
   dom.test.mjs          # приложение в jsdom
 assets/fonts/           # DejaVuSans-subset.ttf (латиница + кириллица + №)
 build.mjs               # сборка в один site/index.html (+ docs/)
+moodle/mod/lasercutstudio/  # плагин Moodle: редактор как элемент курса
 scripts/serve.mjs       # статический сервер, порт 8084
 scripts/sync.mjs        # commit + push с токеном из .env.local
+scripts/moodle-sync-editor.mjs  # site/index.html → плагин/editor/index.html
+scripts/moodle-check.mjs        # статическая проверка плагина
+scripts/moodle-smoke.php        # смоук-тест плагина на живом Moodle (23 проверки)
 start.bat / start.sh    # запуск в один клик (Windows / Ubuntu)
 ```
 

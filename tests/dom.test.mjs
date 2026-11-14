@@ -234,6 +234,35 @@ ok(!window.document.querySelector('#modal-input'), 'диалог закрылс�
 ok(num() > beforeUnion, `объект-текст добавлен (${count()})`);
 ok(!$('#row-length').hidden || $('#props-body').hidden === false, 'текст выделен как обычный объект');
 
+console.log('drag&drop: подсказка не залипает');
+const dropZone = window.document.getElementById('drop-zone');
+const dndEvent = (type, extra = {}) => {
+  const ev = new window.Event(type, { bubbles: true, cancelable: true });
+  Object.defineProperty(ev, 'dataTransfer', { value: { types: ['Files'], files: [], dropEffect: '', ...extra } });
+  return ev;
+};
+window.dispatchEvent(dndEvent('dragenter'));
+ok(dropZone.hidden === false, 'подсказка появилась при перетаскивании файла');
+window.dispatchEvent(dndEvent('dragover'));
+ok(dropZone.hidden === false, 'подсказка держится при движении над окном');
+const leaveOut = new window.Event('dragleave', { bubbles: true });
+Object.defineProperty(leaveOut, 'relatedTarget', { value: null });
+window.dispatchEvent(leaveOut);
+ok(dropZone.hidden === true, 'файл увели за пределы окна — подсказка скрылась');
+window.dispatchEvent(dndEvent('dragenter'));
+$('#overlay').dispatchEvent(new window.MouseEvent('pointerdown', { clientX: 500, clientY: 400, bubbles: true, button: 0 }));
+pointer('pointerup', 500, 400);
+ok(dropZone.hidden === true, 'клик по листу снимает зависшую подсказку');
+
+const svgText = '<svg xmlns="http://www.w3.org/2000/svg" width="40mm" height="30mm"><rect x="1" y="1" width="38" height="28"/></svg>';
+const droppedFile = { name: 'dropped.svg', text: async () => svgText };
+const beforeDrop = num();
+const dropEv = dndEvent('drop', { files: [droppedFile] });
+window.dispatchEvent(dropEv);
+await new Promise((r) => setTimeout(r, 60));
+ok(dropZone.hidden === true, 'после drop подсказка скрыта');
+ok(num() === beforeDrop + 1, `файл из drop загружен (${beforeDrop} → ${num()})`);
+
 console.log('экспорт (без скачивания)');
 const dxf = window.lcx.exportDxf(store.state.doc);
 ok(typeof dxf === 'string' && dxf.includes('AC1015') && dxf.includes('ENTITIES'), 'DXF собирается');

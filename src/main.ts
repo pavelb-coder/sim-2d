@@ -504,17 +504,69 @@ overlayCanvas.addEventListener('wheel', (e) => {
 
 /* ------------------------------------------------------------------ drag&drop */
 const dropZone = document.getElementById('drop-zone') as HTMLDivElement;
-stage.addEventListener('dragover', (e) => {
+
+/** Показывать подсказку только для перетаскивания файлов, а не выделения текста. */
+function isFileDrag(e: DragEvent): boolean {
+  const types = e.dataTransfer?.types;
+  if (!types) return false;
+  return Array.prototype.indexOf.call(types, 'Files') !== -1;
+}
+
+let dropTimer: number | undefined;
+/** Подсказка не должна «зависать» ни при каком сценарии: плюс автоскрытие через 8 с. */
+function showDropZone(show: boolean): void {
+  dropZone.hidden = !show;
+  window.clearTimeout(dropTimer);
+  if (show) {
+    dropTimer = window.setTimeout(() => {
+      dragDepth = 0;
+      dropZone.hidden = true;
+    }, 8000);
+  }
+}
+
+// Счётчик входов/выходов: dragleave срабатывает и при переходе на дочерний
+// элемент (canvas), из-за чего подсказка «мигала» и могла остаться навсегда,
+// если файл уводили за пределы окна. Отслеживаем на уровне окна.
+let dragDepth = 0;
+
+window.addEventListener('dragenter', (e) => {
+  if (!isFileDrag(e)) return;
   e.preventDefault();
-  dropZone.hidden = false;
+  dragDepth += 1;
+  showDropZone(true);
 });
-stage.addEventListener('dragleave', () => { dropZone.hidden = true; });
-stage.addEventListener('drop', (e) => {
+
+window.addEventListener('dragover', (e) => {
+  if (!isFileDrag(e)) return;
   e.preventDefault();
-  dropZone.hidden = true;
+  if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy';
+  showDropZone(true); // страховка: dragenter иногда теряется при быстром движении
+});
+
+window.addEventListener('dragleave', (e) => {
+  // relatedTarget === null — курсор ушёл за пределы окна
+  if (e.relatedTarget === null) {
+    dragDepth = 0;
+    showDropZone(false);
+    return;
+  }
+  dragDepth = Math.max(0, dragDepth - 1);
+  if (dragDepth === 0) showDropZone(false);
+});
+
+window.addEventListener('drop', (e) => {
+  e.preventDefault(); // иначе браузер откроет файл вместо редактора
+  dragDepth = 0;
+  showDropZone(false);
   const file = e.dataTransfer?.files?.[0];
   if (file) void handleFile(file);
 });
+
+// Страховки: перетаскивание отменили (Esc), окно потеряло фокус, файл «завис»
+window.addEventListener('dragend', () => { dragDepth = 0; showDropZone(false); });
+window.addEventListener('blur', () => { dragDepth = 0; showDropZone(false); });
+document.addEventListener('pointerdown', () => { if (!dropZone.hidden) { dragDepth = 0; showDropZone(false); } });
 
 /* ------------------------------------------------------------------ keyboard */
 function isTyping(target: EventTarget | null): boolean {
@@ -560,6 +612,8 @@ window.addEventListener('keydown', (e) => {
       else actions.deleteSelection();
       return;
     case 'escape':
+      dragDepth = 0;
+      showDropZone(false);
       tools[store.state.tool]?.cancel(toolCtx);
       store.select([]);
       actions.setTool('select');

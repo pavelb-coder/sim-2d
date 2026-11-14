@@ -113,6 +113,9 @@ function resize(): void {
   requestRender('both');
 }
 new ResizeObserver(resize).observe(stage);
+// прокрутка панели/страницы и смена масштаба окна не должны оставлять следов кадра
+window.addEventListener('scroll', () => requestRender('both'), { passive: true });
+window.addEventListener('resize', () => resize());
 
 /* ------------------------------------------------------------------ helpers */
 let statusHint: string | null = null;

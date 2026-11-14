@@ -25,8 +25,14 @@ const ctxMock = () =>
     },
   );
 
+/** записи вызовов clearRect — проверяем, что чистится весь буфер (HiDPI) */
+const clearCalls = [];
 window.HTMLCanvasElement.prototype.getContext = function getContext() {
-  return ctxMock();
+  const canvas = this;
+  const m = ctxMock();
+  m.canvas = canvas;
+  m.clearRect = (...args) => { clearCalls.push({ canvas, args }); };
+  return m;
 };
 window.Element.prototype.getBoundingClientRect = function getBoundingClientRect() {
   return { left: 0, top: 0, right: 1200, bottom: 800, width: 1200, height: 800, x: 0, y: 0, toJSON() {} };
@@ -152,6 +158,18 @@ ok(text('#st-sheet').includes('420'), `формат листа применён:
 $('#btn-zoom-in').click();
 ok(text('#zoom-val').endsWith('%'), `зум: ${text('#zoom-val')}`);
 
+
+console.log('перерисовка: очистка всего буфера (нет следов при панораме)');
+$('#btn-zoom-in').click();
+await new Promise((r) => setTimeout(r, 80));
+const sceneCanvas = window.document.getElementById('scene');
+const overlayCanvas = window.document.getElementById('overlay');
+for (const [name, canvas] of [['сцена', sceneCanvas], ['оверлей', overlayCanvas]]) {
+  const rec = clearCalls.filter((c) => c.canvas === canvas).pop();
+  ok(!!rec, `${name} перерисовалась`);
+  ok(rec.args[2] === canvas.width && rec.args[3] === canvas.height,
+    `${name}: очистка на весь буфер ${rec.args[2]}×${rec.args[3]} при буфере ${canvas.width}×${canvas.height}`);
+}
 
 console.log('панели: статистика и слои');
 ok(window.document.querySelectorAll('#stats .stat-line').length >= 2, `статистика по слоям: ${window.document.querySelectorAll('#stats .stat-line').length} строки`);

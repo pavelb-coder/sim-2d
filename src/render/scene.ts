@@ -106,10 +106,14 @@ export function renderScene(
   hoverId: Id | null,
   previewObj: Obj | null,
 ): void {
+  // Чистим ВЕСЬ буфер канваса в device-пикселях: при devicePixelRatio > 1
+  // размер буфера = ширина × dpr, и очистка «по CSS-пикселям» оставляла
+  // неочищенную часть — при панораме/скролле появлялись следы прошлых кадров.
   ctx.setTransform(1, 0, 0, 1, 0, 0);
-  ctx.clearRect(0, 0, view.width, view.height);
+  const cw = ctx.canvas.width, ch = ctx.canvas.height;
+  ctx.clearRect(0, 0, cw, ch);
   ctx.fillStyle = theme.bg;
-  ctx.fillRect(0, 0, view.width, view.height);
+  ctx.fillRect(0, 0, cw, ch);
 
   drawSheet(ctx, sheet, view, dpr);
   if (sheet.showGrid) drawGrid(ctx, sheet, view, dpr);

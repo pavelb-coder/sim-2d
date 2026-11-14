@@ -20,8 +20,9 @@ const HANDLE = 7;
 
 export function renderOverlay(ctx: CanvasRenderingContext2D, input: OverlayInput): void {
   const { doc, view, dpr, selection } = input;
+  // очистка всего буфера в device-пикселях — иначе на HiDPI остаются следы
   ctx.setTransform(1, 0, 0, 1, 0, 0);
-  ctx.clearRect(0, 0, view.width, view.height);
+  ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
 
   // контуры выбранных объектов
   for (const id of selection) {

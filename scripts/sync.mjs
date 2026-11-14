@@ -49,21 +49,33 @@ const mask = (s) => s.replace(/gh[pousr]_[A-Za-z0-9]+/g, '***').replace(/x-acces
  */
 function syncMirror(mirror, pushUrl, mainBranch) {
   const tracking = `refs/remotes/origin/${mirror}`;
+  const localExists = () => !!tryRun(['rev-parse', '--verify', '--quiet', `refs/heads/${mirror}`]);
 
-  if (!tryRun(['rev-parse', '--verify', '--quiet', tracking])) {
-    // Ветки ещё нет на GitHub — создаём её из основной.
+  // Забираем ветку с GitHub. Если её там нет — fetch упадёт, и мы создадим её из main.
+  const fetched = tryRun(['fetch', pushUrl, `+refs/heads/${mirror}:${tracking}`], {
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+
+  if (!fetched) {
     run(['checkout', '-B', mirror, mainBranch]);
-    tryRun(['push', pushUrl, `${mirror}:${mirror}`], { stdio: ['ignore', 'pipe', 'pipe'] });
+    run(['push', pushUrl, `${mirror}:${mirror}`], { stdio: ['ignore', 'pipe', 'pipe'] });
     return `создана из ${mainBranch}`;
   }
 
-  // Локальная ветка = то, что лежит на GitHub (свежий fetch с токеном, чтобы работало и для приватного репо).
-  run(['fetch', pushUrl, `+refs/heads/${mirror}:${tracking}`], { stdio: ['ignore', 'pipe', 'pipe'] });
-  run(['checkout', '-B', mirror, tracking]);
+  if (localExists()) {
+    run(['checkout', mirror]);
+    // подтягиваем то, что уже лежит на GitHub, сохраняя локальные коммиты ветки
+    const diverged = Number(tryRun(['rev-list', '--count', `HEAD..${tracking}`]) || 0);
+    if (diverged > 0) {
+      run(['merge', '--no-edit', '-m', `chore(sync): подтягиваю ${mirror} с GitHub`, tracking]);
+    }
+  } else {
+    run(['checkout', '-B', mirror, tracking]);
+  }
 
   const behind = Number(tryRun(['rev-list', '--count', `${mirror}..${mainBranch}`]) || 0);
   if (behind === 0) {
-    return `уже актуальна (${mirror} содержит ${mainBranch})`;
+    return `уже актуальна (в ${mirror} есть все коммиты ${mainBranch})`;
   }
 
   try {
@@ -74,7 +86,7 @@ function syncMirror(mirror, pushUrl, mainBranch) {
   }
 
   run(['push', pushUrl, `${mirror}:${mirror}`], { stdio: ['ignore', 'pipe', 'pipe'] });
-  return `обновлена: влито ${behind} коммит(ов), HEAD ${run(['rev-parse', '--short', 'HEAD'])}`;
+  return `обновлена: влито ${behind} коммит(ов) из ${mainBranch}, HEAD ${run(['rev-parse', '--short', 'HEAD'])}`;
 }
 
 try {

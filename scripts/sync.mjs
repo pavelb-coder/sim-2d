@@ -66,20 +66,20 @@ function syncMirror(mirror, pushUrl, mainBranch) {
   });
 
   if (!fetched) {
-    run(['checkout', '-B', mirror, mainBranch]);
+    run(['checkout', '-q', '-B', mirror, mainBranch]);
     run(['push', pushUrl, `${mirror}:${mirror}`], { stdio: ['ignore', 'pipe', 'pipe'] });
     return `создана из ${mainBranch}`;
   }
 
   if (localExists()) {
-    run(['checkout', mirror]);
+    run(['checkout', '-q', mirror]);
     // подтягиваем то, что уже лежит на GitHub, сохраняя локальные коммиты ветки
     const diverged = Number(tryRun(['rev-list', '--count', `HEAD..${tracking}`]) || 0);
     if (diverged > 0) {
-      run(['merge', '--no-edit', '-m', `chore(sync): подтягиваю ${mirror} с GitHub`, tracking]);
+      run(['merge', '-q', '--no-edit', '-m', `chore(sync): подтягиваю ${mirror} с GitHub`, tracking]);
     }
   } else {
-    run(['checkout', '-B', mirror, tracking]);
+    run(['checkout', '-q', '-B', mirror, tracking]);
   }
 
   const behind = Number(tryRun(['rev-list', '--count', `${mirror}..${mainBranch}`]) || 0);
@@ -88,7 +88,7 @@ function syncMirror(mirror, pushUrl, mainBranch) {
   }
 
   try {
-    run(['merge', '--no-edit', '-m', `chore(sync): ${mainBranch} → ${mirror}`, mainBranch]);
+    run(['merge', '-q', '--no-edit', '-m', `chore(sync): ${mainBranch} → ${mirror}`, mainBranch]);
   } catch {
     tryRun(['merge', '--abort']);
     throw new Error(`конфликт при слиянии ${mainBranch} в ${mirror}: разрешите вручную, ветка не обновлена`);
@@ -160,7 +160,7 @@ try {
     } finally {
       // возвращаемся туда, где были: работа продолжается в основной ветке
       if (run(['rev-parse', '--abbrev-ref', 'HEAD']) !== startBranch) {
-        tryRun(['checkout', startBranch]);
+        tryRun(['checkout', '-q', startBranch]);
       }
     }
   }

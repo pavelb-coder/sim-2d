@@ -27,6 +27,15 @@ const tryRun = (args, opts = {}) => {
     return null;
   }
 };
+/** true/false вместо результата: у fetch и push пустой stdout, поэтому tryRun тут не годится. */
+const attempt = (args, opts = {}) => {
+  try {
+    run(args, opts);
+    return true;
+  } catch {
+    return false;
+  }
+};
 
 async function loadEnv() {
   const env = { ...process.env };
@@ -52,7 +61,7 @@ function syncMirror(mirror, pushUrl, mainBranch) {
   const localExists = () => !!tryRun(['rev-parse', '--verify', '--quiet', `refs/heads/${mirror}`]);
 
   // Забираем ветку с GitHub. Если её там нет — fetch упадёт, и мы создадим её из main.
-  const fetched = tryRun(['fetch', pushUrl, `+refs/heads/${mirror}:${tracking}`], {
+  const fetched = attempt(['fetch', pushUrl, `+refs/heads/${mirror}:${tracking}`], {
     stdio: ['ignore', 'pipe', 'pipe'],
   });
 

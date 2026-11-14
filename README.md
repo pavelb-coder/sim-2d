@@ -4,6 +4,16 @@
 Это **рабочий прототип шага S1** из `ARCHITECTURE.md` — геометрическое ядро, рендер листа,
 store с undo/redo и три инструмента рисования. Экспорт DXF/SVG — следующий шаг (S2).
 
+## Живая версия
+
+- **Прототип:** https://pavelb-coder.github.io/sim-2d/
+- **Репозиторий:** https://github.com/pavelb-coder/sim-2d
+
+GitHub Pages отдаёт папку `/docs` (там `docs/index.html` — та же сборка, что и `site/index.html`).
+Если хотите, чтобы деплой шёл через Actions с прогоном типов и тестов, положите готовый
+`docs/pages-workflow.yml` в `.github/workflows/pages.yml` (нужен токен со scope `workflow`
+либо добавление файла через веб-интерфейс), затем Settings → Pages → Source: **GitHub Actions**.
+
 ## Запуск
 
 ```bash

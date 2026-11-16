@@ -32,6 +32,7 @@ import { theme } from './render/theme';
 import { createTools } from './tools';
 import { emptyOverlay, type ToolCtx } from './tools/tool';
 import { nodeNudge, nodeOpAlign, nodeOpBreak, nodeOpClose, nodeOpCurve, nodeOpDelete, nodeOpJoin, nodeOpLine, nodeOpReverse, nodeOpSetPos, nodeOpType, nodeToolState } from './tools/node';
+import { jointToolState } from './tools/joint';
 import { setTextHeight } from './tools/text';
 
 import { initUI, setAutosaveStatus, setIssues, setStats } from './ui/panels';
@@ -775,6 +776,7 @@ window.addEventListener('keydown', (e) => {
     case 'p': actions.setTool('polygon'); return;
     case 's': actions.setTool('star'); return;
     case 't': actions.setTool('text'); return;
+    case 'j': actions.setTool('joint'); return;
     case 'delete':
     case 'backspace':
       e.preventDefault();
@@ -889,6 +891,10 @@ const actions = {
     if (err) { toast(err); return; }
     toast(`В кривые: ${had} объект(ов) — масштаб и поворот запечены, дуги стали кривыми`);
     requestRender('both');
+  },
+  setJointSettings(patch: Partial<{ mode: 'slot' | 'dovetail' | 'tab'; clearance: number; depth: number }>): void {
+    store.setJointSettings(patch);
+    requestRender('overlay');
   },
   setMaterial(patch: Partial<Material>): void {
     store.updateMaterial(patch);
@@ -1022,4 +1028,6 @@ document.getElementById('file-input')?.addEventListener('change', (e) => {
   panels: { init: initPanelCollapse, collapseAll, isCollapsed },
   // редактор узлов: выделенные узлы/сегмент (для тестов и отладки)
   node: nodeToolState,
+  // инструмент «Паз»: превью под курсором и последняя операция
+  joint: jointToolState,
 };

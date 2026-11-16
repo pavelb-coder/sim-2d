@@ -4,6 +4,7 @@ import { createSelectTool } from './select';
 import { createShapeTool } from './shape';
 import { nodeTool } from './node';
 import { textTool } from './text';
+import { jointTool } from './joint';
 
 export interface ToolDef {
   id: ToolId;
@@ -43,6 +44,10 @@ export const TOOL_DEFS: ToolDef[] = [
     icon: '<path d="M4 16c4-9 9-9 13 0" fill="none" stroke="currentColor" stroke-width="1.6"/><rect x="2.6" y="14.6" width="3" height="3" fill="currentColor"/><rect x="14.4" y="14.6" width="3" height="3" fill="currentColor"/>',
   },
   {
+    id: 'joint', label: 'Паз', key: 'J', available: true,
+    icon: '<path d="M3.5 5h13v6.5h-4.2V16H7.7v-4.5H3.5z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>',
+  },
+  {
     id: 'text', label: 'Текст', key: 'T', available: true,
     icon: '<path d="M4 5h13M10.5 5v11" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round"/>',
   },
@@ -58,5 +63,6 @@ export function createTools(): Record<string, Tool> {
     polygon: createShapeTool('polygon'),
     star: createShapeTool('star'),
     text: textTool,
+    joint: jointTool,
   };
 }

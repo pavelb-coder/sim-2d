@@ -1,4 +1,4 @@
-import type { Id, Obj, SubPath } from '../core/types';
+import type { Id, Obj, SubPath, Vec2 } from '../core/types';
 import { sheetObjects } from '../core/doc';
 import { nestObjects, type NestOptions } from '../core/nest';
 import { rotateBy, mirror } from './edits';
@@ -11,6 +11,7 @@ import { textOnPath, type TextAlign } from '../core/textPath';
 import { addCmd, removeCmd, updateCmd, type Patch } from './history';
 import { compensateKerf, materialOf } from '../core/geom/kerf';
 import { isCurve, toCurves } from '../core/geom/curves';
+import { makeJoint, nearestEdge, type JointOptions } from '../core/geom/joint';
 import type { Store } from './store';
 
 const worldOf = (obj: Obj): SubPath[] => transformSubPaths(obj.path, obj.transform);
@@ -72,6 +73,25 @@ export function applyOffset(store: Store, deltaMm: number): string | null {
   }
   store.commit({ label: deltaMm > 0 ? 'Контур наружу' : 'Контур внутрь', patches });
   void skipped;
+  return null;
+}
+
+/**
+ * Соединение «паз — шип» по клику рядом с ребром детали.
+ * Толщина, зазор и глубина — из настроек инструмента «Паз».
+ * Результат — полилинии (булева операция), откат одним undo.
+ */
+export function applyJoint(store: Store, objectId: Id, at: Vec2, opts: JointOptions): string | null {
+  const obj = store.state.doc.objects[objectId];
+  if (!obj) return 'Объект не найден';
+  if (obj.locked) return 'Объект заблокирован — снимите замок в списке объектов';
+  const hit = nearestEdge(worldOf(obj), at);
+  if (!hit) return 'У объекта нет рёбер — паз строится по замкнутому контуру';
+  if (hit.dist > Math.max(20, opts.thickness * 4)) return 'Кликните ближе к ребру детали';
+  const result = makeJoint(worldOf(obj), hit, opts);
+  if (!result.length) return 'Не удалось построить соединение: проверьте, что контур замкнут';
+  const after: Obj = { ...resultObject(store, obj, result, obj.name ?? 'Деталь'), id: obj.id, name: obj.name };
+  store.commit({ label: opts.mode === 'tab' ? 'Шип' : 'Паз', patches: [{ kind: 'update', before: obj, after }] });
   return null;
 }
 

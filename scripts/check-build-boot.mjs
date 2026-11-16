@@ -56,7 +56,7 @@ const ok = (cond, msg) => {
 
 ok(errors.length === 0, `нет ошибок при загрузке${errors.length ? `: ${errors.slice(0, 3).join(' | ')}` : ''}`);
 ok(typeof w.lcx === 'object', 'приложение инициализировалось (window.lcx на месте)');
-ok(doc.querySelectorAll('.tool-btn').length === 8, `панель инструментов: ${doc.querySelectorAll('.tool-btn').length} кнопок`);
+ok(doc.querySelectorAll('.tool-btn').length === 9, `панель инструментов: ${doc.querySelectorAll('.tool-btn').length} кнопок`);
 const blockCount = doc.querySelectorAll('aside.panel .pblock').length;
 ok(blockCount >= 15, `блоки панели на месте (${blockCount})`);
 ok(doc.querySelectorAll('h2.phead').length === blockCount, 'заголовки всех блоков стали кнопками (докеры работают)');

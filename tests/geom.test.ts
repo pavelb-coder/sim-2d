@@ -19,6 +19,7 @@ import { compensateKerf, kerfOffset, materialOf, defaultMaterial, MATERIAL_PRESE
 import { pathsArea } from '../src/core/geom/boolean';
 import { arcsToCubics, hasArcs, isCurve, isIdentityMatrix, toCurves } from '../src/core/geom/curves';
 import { rotate as rotateM, translate as translateM, compose as composeM } from '../src/core/geom/transform';
+import { defaultJointOptions, jointPolygon, makeJoint, nearestEdge, slotDepth, slotHalfWidth } from '../src/core/geom/joint';
 
 let passed = 0;
 function test(name: string, fn: () => void): void {
@@ -587,6 +588,78 @@ test('в кривые: матрица запекается, объект ост�
   assert.equal(isCurve(toCurves(conv)), true, 'операция идемпотентна');
   assert.equal(conv.id, obj.id, 'id и стиль сохраняются');
   assert.equal(conv.style.strokeWidth, 0.2);
+});
+
+test('паз: ширина и глубина считаются от толщины материала', () => {
+  const o = { ...defaultJointOptions(3), clearance: 0.1 };
+  near(slotHalfWidth(o), 1.45);            // (3 − 0,1) / 2
+  near(slotDepth(o), 3);                   // 0 → на всю толщину
+  near(slotDepth({ ...o, depth: 5 }), 5);  // заданная глубина важнее
+  // зазор больше толщины не превращает паз в ничто
+  assert.ok(slotHalfWidth({ ...o, clearance: 10 }) >= 0.05);
+});
+
+test('паз: ребро и нормаль определяются по клику рядом с контуром', () => {
+  const plate = rectPath(100, 60);                  // −50…50 × −30…30
+  const bottom = nearestEdge(plate, { x: 0, y: -28 });
+  assert.ok(bottom);
+  near(bottom!.point.y, -30, 1e-9);                 // проекция легла на нижнее ребро
+  near(bottom!.normal.y, 1, 1e-9);                  // нормаль смотрит внутрь детали (+Y)
+  near(Math.abs(bottom!.dir.x), 1, 1e-9);
+
+  const top = nearestEdge(plate, { x: 10, y: 29 });
+  assert.ok(top);
+  near(top!.point.y, 30, 1e-9);
+  near(top!.normal.y, -1, 1e-9);                    // сверху — внутрь вниз
+  // у прямоугольника четыре ребра, клик в центр попадает на ближайшее
+  const mid = nearestEdge(plate, { x: 0, y: 0 });
+  assert.ok(mid && Math.abs(mid.point.y) === 30, 'из центра ближайшие — длинные рёбра');
+});
+
+test('паз: вырез ровно «толщина − зазор» × глубина, шип — приварка наружу', () => {
+  const plate = rectPath(100, 60);
+  const area = pathsArea(plate);
+  near(area, 6000, 0.05);          // Clipper считает в целочисленной сетке — допускаем 0,05 мм²
+
+  const hit = nearestEdge(plate, { x: 0, y: -29 })!;
+  const opts = { ...defaultJointOptions(3), clearance: 0.1 };
+  const slotted = makeJoint(plate, hit, opts);
+  assert.equal(slotted.length, 1, 'паз не разваливает деталь на части');
+  // 2,9 мм ширины × 3 мм глубины = 8,7 мм²
+  near(pathsArea(slotted), area - 2.9 * 3, 1e-3);
+  // паз стоит по центру нижнего ребра и уходит внутрь
+  const poly = jointPolygon(hit, opts);
+  const box = bboxOfSubPaths([poly]);
+  near(box.x + box.w / 2, 0, 1e-9);
+
+  // шип приваривается снаружи: площадь растёт на ту же величину
+  const tabbed = makeJoint(plate, hit, { ...opts, mode: 'tab' });
+  near(pathsArea(tabbed), area + 2.9 * 3, 1e-3);
+
+  // ласточкин хвост шире у устья, чем у дна
+  const dt = jointPolygon(hit, { ...opts, mode: 'dovetail' });
+  const mouth = dt.segs[0];
+  const root = dt.segs[2];
+  const len = (sg: typeof mouth): number => Math.hypot(sg.b.x - sg.a.x, sg.b.y - sg.a.y);
+  assert.ok(len(mouth) > len(root), 'устье шире дна');
+
+  // глубина из настроек соблюдается
+  const deep = makeJoint(plate, hit, { ...opts, depth: 8 });
+  near(pathsArea(deep), area - 2.9 * 8, 1e-3);
+});
+
+test('паз: работает на повёрнутой и сдвинутой детали', () => {
+  const m = composeM(translateM(200, 100), rotateM(Math.PI / 4));
+  const world = transformSubPaths(rectPath(100, 60), m);
+  const area = Math.abs(pathsArea(world));
+  near(area, 6000, 0.05);
+  // клик около середины мирового ребра (не у угла, иначе паз вылезет за деталь)
+  const s0 = world[0].segs[0];
+  const mid = { x: (s0.a.x + s0.b.x) / 2, y: (s0.a.y + s0.b.y) / 2 };
+  const hit = nearestEdge(world, { x: mid.x + 0.2, y: mid.y + 0.2 })!;
+  const out = makeJoint(world, hit, { ...defaultJointOptions(3), clearance: 0.1 });
+  near(Math.abs(pathsArea(out)), area - 2.9 * 3, 1e-3);
+  assert.equal(out.length, 1);
 });
 
 console.log(`\n${passed} тестов пройдено`);

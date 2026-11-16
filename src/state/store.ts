@@ -17,6 +17,8 @@ export interface AppState {
   token: number;
   activeLayerId: Id;
   alignRef: 'sheet' | 'selection';
+  /** умное выравнивание при перетаскивании (Dynamic guides) */
+  smartGuides: boolean;
 }
 
 type Listener = (state: AppState, kind: ChangeKind) => void;
@@ -38,6 +40,7 @@ export class Store {
       token: 1,
       activeLayerId: doc.layers[0].id,
       alignRef: 'selection',
+      smartGuides: true,
     };
   }
 
@@ -134,6 +137,11 @@ export class Store {
 
   styleFor(layer: Layer): Style {
     return emptyStyle(layer);
+  }
+
+  setSmartGuides(on: boolean): void {
+    this.state = { ...this.state, smartGuides: on };
+    this.emit('ui');
   }
 
   setActiveLayer(id: Id): void {

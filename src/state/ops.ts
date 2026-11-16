@@ -5,6 +5,7 @@ import { booleanPaths, offsetPaths, pathsArea, unionPaths, type BoolOp } from '.
 import { bboxOfSubPaths, boxUnion, transformSubPaths, worldBBox } from '../core/geom/path';
 import { IDENT } from '../core/geom/transform';
 import { makeObj, uid } from '../core/shape';
+import { roundCorners, type CornerMode } from '../core/geom/corners';
 import { addCmd, removeCmd, updateCmd, type Patch } from './history';
 import type { Store } from './store';
 
@@ -305,3 +306,59 @@ export const objectsArea = (objs: Obj[]): number => objs.reduce((s, o) => s + pa
 export { addCmd, removeCmd };
 
 export const selectedIds = (store: Store): Id[] => store.state.selection;
+
+/**
+ * Скругление (fillet) или фаска (chamfer) углов выделенных объектов.
+ *
+ * @param store хранилище
+ * @param mode 'fillet' | 'chamfer'
+ * @param size радиус/величина в мм
+ * @returns текст ошибки или null
+ */
+export function applyCorners(store: Store, mode: CornerMode, size: number): string | null {
+  const objs = store.selected();
+  if (!objs.length) return 'Ничего не выбрано';
+  if (!(size > 0)) return 'Задайте радиус или величину фаски';
+
+  const pairs: { before: Obj; after: Obj }[] = [];
+  for (const obj of objs) {
+    const rounded = roundCorners(worldOf(obj), size, mode);
+    if (!rounded.length) continue;
+    const next = { ...obj, path: rounded, transform: { ...IDENT } };
+    pairs.push({ before: obj, after: next });
+  }
+  if (!pairs.length) return 'Нечего обрабатывать';
+
+  store.commit(updateCmd(mode === 'fillet' ? 'Скругление углов' : 'Фаска углов', pairs));
+  return null;
+}
+
+/**
+ * Скрыть/показать или заблокировать/разблокировать объект (Object manager).
+ *
+ * @param store хранилище
+ * @param id объект
+ * @param flag 'hidden' | 'locked'
+ * @param value новое значение
+ */
+export function setObjectFlag(store: Store, id: Id, flag: 'hidden' | 'locked', value: boolean): void {
+  const obj = store.state.doc.objects[id];
+  if (!obj) return;
+  const next = { ...obj, [flag]: value } as Obj;
+  store.commit(updateCmd(value ? (flag === 'hidden' ? 'Скрыть' : 'Заблокировать') : (flag === 'hidden' ? 'Показать' : 'Разблокировать'), [
+    { before: obj, after: next },
+  ]));
+  if (flag === 'hidden' && value) {
+    store.select(store.state.selection.filter((sel) => sel !== id));
+  }
+}
+
+/** Сдвиг объекта на один шаг по Z-порядку (кнопки в списке объектов). */
+export function reorderOne(store: Store, id: Id, dir: 'up' | 'down'): void {
+  const order = [...store.state.doc.order];
+  const i = order.indexOf(id);
+  const j = dir === 'up' ? i + 1 : i - 1;
+  if (i < 0 || j < 0 || j >= order.length) return;
+  [order[i], order[j]] = [order[j], order[i]];
+  store.commit({ label: dir === 'up' ? 'Выше' : 'Ниже', patches: [{ kind: 'order', before: store.state.doc.order, after: order }] });
+}

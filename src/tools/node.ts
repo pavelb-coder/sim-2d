@@ -122,7 +122,7 @@ export const nodeTool: Tool = {
   },
 
   overlay(): ToolOverlay {
-    return { marquee: null, snap: null, draw: null };
+    return { marquee: null, snap: null, align: [], draw: null };
   },
 };
 

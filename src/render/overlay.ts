@@ -1,6 +1,7 @@
 import type { Box, Doc, Id, Sheet, Vec2 } from '../core/types';
 import { bboxOfSubPaths, boxUnion, worldBBox } from '../core/geom/path';
 import type { SnapResult } from '../core/snap';
+import type { AlignLine } from '../core/smart';
 import { theme } from './theme';
 import { View } from './view';
 import { drawObject } from './scene';
@@ -13,6 +14,7 @@ export interface OverlayInput {
   selection: Id[];
   marquee: Box | null;
   snap: SnapResult | null;
+  align: AlignLine[];
   drawExtra: ((ctx: CanvasRenderingContext2D, view: View, dpr: number) => void) | null;
 }
 
@@ -59,6 +61,9 @@ export function renderOverlay(ctx: CanvasRenderingContext2D, input: OverlayInput
     ctx.setLineDash([]);
   }
 
+  // линии умного выравнивания
+  if (input.align.length) drawAlign(ctx, input.align, view, dpr);
+
   // точка привязки
   if (input.snap) drawSnap(ctx, input.snap, view, dpr);
 
@@ -94,6 +99,29 @@ function drawBBox(ctx: CanvasRenderingContext2D, box: Box, view: View, dpr: numb
     ctx.fill();
     ctx.stroke();
   }
+}
+
+function drawAlign(ctx: CanvasRenderingContext2D, lines: AlignLine[], view: View, dpr: number): void {
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.strokeStyle = theme.align;
+  ctx.lineWidth = 1;
+  ctx.setLineDash([5, 4]);
+  for (const line of lines) {
+    ctx.beginPath();
+    if (line.axis === 'x') {
+      const a = view.toScreen({ x: line.at, y: line.from });
+      const b = view.toScreen({ x: line.at, y: line.to });
+      ctx.moveTo(Math.round(a.x) + 0.5, a.y);
+      ctx.lineTo(Math.round(b.x) + 0.5, b.y);
+    } else {
+      const a = view.toScreen({ x: line.from, y: line.at });
+      const b = view.toScreen({ x: line.to, y: line.at });
+      ctx.moveTo(a.x, Math.round(a.y) + 0.5);
+      ctx.lineTo(b.x, Math.round(b.y) + 0.5);
+    }
+    ctx.stroke();
+  }
+  ctx.setLineDash([]);
 }
 
 function drawSnap(ctx: CanvasRenderingContext2D, snap: SnapResult, view: View, dpr: number): void {

@@ -37,6 +37,10 @@ export interface UIActions {
   setTextHeight(mm: number): void;
   transform(kind: 'rot90' | 'rot-90' | 'mirrorH' | 'mirrorV'): void;
   nest(all: boolean, opts: { gap: number; margin: number; allowRotate: boolean }): void;
+  corners(mode: 'fillet' | 'chamfer', size: number): void;
+  setSmartGuides(on: boolean): void;
+  setObjectFlag(id: string, flag: 'hidden' | 'locked', value: boolean): void;
+  reorderOne(id: string, dir: 'up' | 'down'): void;
   toast(text: string): void;
 }
 
@@ -112,6 +116,7 @@ export function initUI(store: Store, actions: UIActions): void {
   $<HTMLInputElement>('chk-grid').addEventListener('change', (e) => store.updateSheet({ showGrid: (e.target as HTMLInputElement).checked }));
   $<HTMLInputElement>('chk-snap-grid').addEventListener('change', (e) => store.updateSheet({ snapGrid: (e.target as HTMLInputElement).checked }));
   $<HTMLInputElement>('chk-snap-obj').addEventListener('change', (e) => store.updateSheet({ snapObjects: (e.target as HTMLInputElement).checked }));
+  $<HTMLInputElement>('chk-smart').addEventListener('change', (e) => actions.setSmartGuides((e.target as HTMLInputElement).checked));
 
   /* ---------- свойства ---------- */
   const applyGeometry = (): void => {
@@ -135,6 +140,8 @@ export function initUI(store: Store, actions: UIActions): void {
   bind('op-xor', () => actions.booleanOp('xor'));
   bind('op-offset-out', () => actions.offset(Math.abs(val('offset-mm'))));
   bind('op-offset-in', () => actions.offset(-Math.abs(val('offset-mm'))));
+  bind('corner-fillet', () => actions.corners('fillet', Math.abs(val('corner-mm'))));
+  bind('corner-chamfer', () => actions.corners('chamfer', Math.abs(val('corner-mm'))));
   bind('dup-row', () => actions.duplicatePattern('row'));
   bind('dup-circle', () => actions.duplicatePattern('circle'));
   bind('grp-group', () => actions.group());
@@ -219,6 +226,7 @@ export function initUI(store: Store, actions: UIActions): void {
     $<HTMLInputElement>('chk-grid').checked = sheet.showGrid;
     $<HTMLInputElement>('chk-snap-grid').checked = sheet.snapGrid;
     $<HTMLInputElement>('chk-snap-obj').checked = sheet.snapObjects;
+    $<HTMLInputElement>('chk-smart').checked = state.smartGuides;
     presetSel.value = `${sheet.width}x${sheet.height}`;
 
     const objs = store.selected();
@@ -264,7 +272,101 @@ export function initUI(store: Store, actions: UIActions): void {
     }
     $<HTMLButtonElement>('btn-delete').disabled = !objs.length;
     $<HTMLButtonElement>('btn-duplicate').disabled = !objs.length;
+
+    renderObjectList(state);
   }
+
+  /* ---------- список объектов (как Object manager) ---------- */
+  const objList = $('obj-list');
+  let builtKey = '';
+
+  function renderObjectList(state: AppState): void {
+    const ids = state.doc.order.filter((id) => state.doc.objects[id]?.sheetId === state.sheet.id);
+    const key = ids.join(',');
+    if (key !== builtKey) {
+      builtKey = key;
+      objList.innerHTML = '';
+      if (!ids.length) {
+        const empty = document.createElement('p');
+        empty.className = 'pempty';
+        empty.textContent = 'На листе пока нет объектов';
+        objList.appendChild(empty);
+      }
+      // сверху — верхний объект по Z-порядку, как в CorelDRAW
+      for (const id of [...ids].reverse()) {
+        const obj = state.doc.objects[id];
+        if (!obj) continue;
+        const row = document.createElement('div');
+        row.className = 'objrow';
+        row.dataset.id = id;
+        row.setAttribute('role', 'listitem');
+
+        const eye = document.createElement('button');
+        eye.dataset.objAct = 'eye';
+        const lock = document.createElement('button');
+        lock.dataset.objAct = 'lock';
+        const name = document.createElement('button');
+        name.className = 'objname';
+        name.dataset.objAct = 'select';
+        const up = document.createElement('button');
+        up.dataset.objAct = 'up';
+        up.title = 'Выше';
+        up.textContent = '↑';
+        const down = document.createElement('button');
+        down.dataset.objAct = 'down';
+        down.title = 'Ниже';
+        down.textContent = '↓';
+
+        row.append(eye, lock, name, up, down);
+        objList.appendChild(row);
+      }
+    }
+
+    // Состояние строк правим без пересборки — иначе клик по кнопке попадает
+    // в уже удалённый узел (список перерисовывается на каждое изменение выделения).
+    const selection = new Set(state.selection);
+    for (const row of objList.querySelectorAll<HTMLElement>('.objrow')) {
+      const obj = state.doc.objects[row.dataset.id ?? ''];
+      if (!obj) continue;
+      row.classList.toggle('is-hidden', !!obj.hidden);
+      row.classList.toggle('is-locked', !!obj.locked);
+      row.classList.toggle('is-selected', selection.has(obj.id));
+      const eye = row.querySelector<HTMLButtonElement>('[data-obj-act="eye"]');
+      const lock = row.querySelector<HTMLButtonElement>('[data-obj-act="lock"]');
+      const name = row.querySelector<HTMLButtonElement>('[data-obj-act="select"]');
+      if (eye) {
+        eye.textContent = obj.hidden ? '○' : '◉';
+        eye.title = obj.hidden ? 'Показать' : 'Скрыть';
+      }
+      if (lock) {
+        lock.textContent = obj.locked ? '🔒' : '🔓';
+        lock.title = obj.locked ? 'Разблокировать' : 'Заблокировать';
+      }
+      if (name) {
+        const layer = state.doc.layers.find((l) => l.id === obj.layerId);
+        name.textContent = obj.name || (obj.path.length > 1 ? `Контур ×${obj.path.length}` : 'Контур');
+        name.title = `${layer ? layer.name : ''} · ${obj.path.length} контур(ов)`;
+      }
+    }
+  }
+
+  objList.addEventListener('click', (e) => {
+    const target = (e.target as HTMLElement).closest<HTMLElement>('[data-obj-act]');
+    const row = (e.target as HTMLElement).closest<HTMLElement>('.objrow');
+    if (!target || !row?.dataset.id) return;
+    const id = row.dataset.id;
+    const obj = store.state.doc.objects[id];
+    if (!obj) return;
+    const act = target.dataset.objAct;
+    if (act === 'eye') actions.setObjectFlag(id, 'hidden', !obj.hidden);
+    else if (act === 'lock') actions.setObjectFlag(id, 'locked', !obj.locked);
+    else if (act === 'up') actions.reorderOne(id, 'up');
+    else if (act === 'down') actions.reorderOne(id, 'down');
+    else if (act === 'select') {
+      if (obj.hidden) actions.setObjectFlag(id, 'hidden', false);
+      store.select(e.shiftKey ? [...new Set([...store.state.selection, id])] : [id]);
+    }
+  });
 
   store.subscribe(() => sync(store.state));
   sync(store.state);

@@ -101,7 +101,7 @@ const key = (k, extra = {}) => window.dispatchEvent(new window.KeyboardEvent('ke
 
 console.log('dom / boot');
 
-ok(window.document.querySelectorAll('.tool-btn').length === 6, 'панель инструментов: 6 кнопок');
+ok(window.document.querySelectorAll('.tool-btn').length === 8, 'панель инструментов: 8 кнопок (включая многоугольник и звезду)');
 const N0 = Number(count().replace(/\D+/g, ''));
 ok(N0 >= 5, `демо-документ загружен (${count()})`);
 ok(text('#st-sheet').includes('300'), `лист в мм: ${text('#st-sheet')}`);
@@ -328,6 +328,89 @@ smartChk.dispatchEvent(new window.Event('change', { bubbles: true }));
 ok(store.state.smartGuides === false, 'тумблер отключает умные направляющие');
 smartChk.checked = true;
 smartChk.dispatchEvent(new window.Event('change', { bubbles: true }));
+
+console.log('интерактивные ручки, многоугольник и звезда');
+
+const view = window.lcx.view;
+const scr = (p) => view.toScreen(p);
+
+/** bbox объекта в мировых мм: точки контура, прогнанные через его матрицу. */
+const worldBoxOf = (obj) => {
+  const pts = [];
+  for (const sp of obj.path) {
+    pts.push(sp.start);
+    for (const sg of sp.segs) {
+      pts.push(sg.b);
+      if (sg.t === 'c') pts.push(sg.c1, sg.c2);
+    }
+  }
+  const m = obj.transform;
+  const xs = pts.map((p) => m.a * p.x + m.c * p.y + m.e);
+  const ys = pts.map((p) => m.b * p.x + m.d * p.y + m.f);
+  const x = Math.min(...xs), y = Math.min(...ys);
+  return { x, y, w: Math.max(...xs) - x, h: Math.max(...ys) - y };
+};
+
+// прямоугольник протяжкой
+$('.tool-btn[data-tool="rect"]').click();
+pointer('pointerdown', 300, 250);
+pointer('pointermove', 420, 330);
+pointer('pointerup', 420, 330);
+const handleId = store.state.selection[0];
+$('.tool-btn[data-tool="select"]').click();
+store.select([handleId]);
+const hb = worldBoxOf(store.state.doc.objects[handleId]);
+ok(hb.w > 1 && hb.h > 1, `прямоугольник для ручек: ${hb.w.toFixed(1)}×${hb.h.toFixed(1)} мм`);
+
+// масштаб за правый нижний угол: тянем на габарит наружу → размеры удваиваются
+const se = scr({ x: hb.x + hb.w, y: hb.y });
+pointer('pointerdown', se.x, se.y);
+pointer('pointermove', se.x + hb.w * view.scale, se.y + hb.h * view.scale);
+pointer('pointerup', se.x + hb.w * view.scale, se.y + hb.h * view.scale);
+const scaled = worldBoxOf(store.state.doc.objects[handleId]);
+ok(Math.abs(scaled.w - hb.w * 2) < hb.w * 0.02 && Math.abs(scaled.h - hb.h * 2) < hb.h * 0.02,
+  `ручка масштаба удвоила габарит: ${scaled.w.toFixed(1)}×${scaled.h.toFixed(1)} мм`);
+key('z', { ctrlKey: true });
+ok(Math.abs(worldBoxOf(store.state.doc.objects[handleId]).w - hb.w) < 0.01, 'undo вернул исходный размер');
+
+// поворот за ручку над верхней гранью: 90°
+const center = scr({ x: hb.x + hb.w / 2, y: hb.y + hb.h / 2 });
+const top = scr({ x: hb.x + hb.w / 2, y: hb.y + hb.h });
+pointer('pointerdown', top.x, top.y - 20);
+pointer('pointermove', center.x + 80, center.y);
+pointer('pointerup', center.x + 80, center.y);
+const rotated = worldBoxOf(store.state.doc.objects[handleId]);
+ok(Math.abs(rotated.w - hb.h) < hb.h * 0.03 && Math.abs(rotated.h - hb.w) < hb.w * 0.03,
+  `ручка поворота повернула на 90°: ${rotated.w.toFixed(1)}×${rotated.h.toFixed(1)} мм`);
+key('z', { ctrlKey: true });
+ok(Math.abs(worldBoxOf(store.state.doc.objects[handleId]).w - hb.w) < 0.01, 'undo вернул исходную ориентацию');
+
+// многоугольник и звезда
+const beforePoly = num();
+$('.tool-btn[data-tool="polygon"]').click();
+$('#poly-sides').value = '7';
+$('#poly-sides').dispatchEvent(new window.Event('input', { bubbles: true }));
+pointer('pointerdown', 600, 200);
+pointer('pointermove', 680, 280);
+pointer('pointerup', 680, 280);
+const polyObj = store.state.doc.objects[store.state.selection[0]];
+ok(num() === beforePoly + 1, `многоугольник создан (${num()} объектов)`);
+ok(polyObj.path[0].segs.length === 7, `у многоугольника 7 сторон (${polyObj.path[0].segs.length})`);
+
+$('.tool-btn[data-tool="star"]').click();
+$('#star-points').value = '6';
+$('#star-points').dispatchEvent(new window.Event('input', { bubbles: true }));
+pointer('pointerdown', 600, 400);
+pointer('pointermove', 680, 480);
+pointer('pointerup', 680, 480);
+const starObj = store.state.doc.objects[store.state.selection[0]];
+ok(starObj.path[0].segs.length === 12, `у звезды 6 лучей = 12 вершин (${starObj.path[0].segs.length})`);
+const radii = starObj.path[0].segs.map((sg) => Math.hypot(sg.a.x, sg.a.y));
+const rOuter = Math.max(...radii), rInner = Math.min(...radii);
+ok(Math.abs(rInner / rOuter - 0.45) < 0.02, `глубина звезды 45% выдержана (${(100 * rInner / rOuter).toFixed(0)}%)`);
+ok(worldBoxOf(starObj).w > 10 && worldBoxOf(starObj).h > 10, `звезда получила габарит ${worldBoxOf(starObj).w.toFixed(1)}×${worldBoxOf(starObj).h.toFixed(1)} мм`);
+key('z', { ctrlKey: true });
+key('z', { ctrlKey: true });
 
 console.log('экспорт (без скачивания)');
 const dxf = window.lcx.exportDxf(store.state.doc);

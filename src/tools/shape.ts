@@ -1,12 +1,12 @@
 import type { Obj, Vec2 } from '../core/types';
-import { ellipsePath, linePath, makeObj, rectPath } from '../core/shape';
+import { ellipsePath, linePath, makeObj, polygonPath, rectPath, starPath } from '../core/shape';
 import { rotate, translate, compose, IDENT } from '../core/geom/transform';
 import { addCmd } from '../state/history';
 import { dist } from '../core/geom/vec';
 import type { Tool, ToolCtx, ToolOverlay } from './tool';
 import { drawObject } from '../render/scene';
 
-export type ShapeKind = 'line' | 'rect' | 'ellipse';
+export type ShapeKind = 'line' | 'rect' | 'ellipse' | 'polygon' | 'star';
 
 const MIN_SIZE = 0.2;
 
@@ -38,6 +38,22 @@ export function createShapeTool(kind: ShapeKind): Tool {
     const w = Math.abs(dx), h = Math.abs(dy);
     if (w < MIN_SIZE || h < MIN_SIZE) return null;
     const cx = start.x + dx / 2, cy = start.y + dy / 2;
+    if (kind === 'polygon' || kind === 'star') {
+      // единичная фигура + неоднородный масштаб — прямоугольник протяжки задаёт габарит,
+      // как при протяжке инструментом Polygon в CorelDRAW
+      const st = c.store.state;
+      const path = kind === 'polygon'
+        ? polygonPath(1, st.polySides)
+        : starPath(1, st.starPoints, st.starInner);
+      return makeObj({
+        sheetId: st.sheet.id,
+        layerId: layer.id,
+        path,
+        transform: { a: w / 2, b: 0, c: 0, d: h / 2, e: cx, f: cy },
+        style: c.store.styleFor(layer),
+        name: kind === 'polygon' ? `Многоугольник ${Math.round(st.polySides)}` : `Звезда ${Math.round(st.starPoints)}`,
+      });
+    }
     return makeObj({
       sheetId: c.store.state.sheet.id,
       layerId: layer.id,

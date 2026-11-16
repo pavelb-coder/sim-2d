@@ -39,6 +39,7 @@ export interface UIActions {
   nest(all: boolean, opts: { gap: number; margin: number; allowRotate: boolean }): void;
   corners(mode: 'fillet' | 'chamfer', size: number): void;
   setSmartGuides(on: boolean): void;
+  setShapeParams(p: { polySides?: number; starPoints?: number; starInner?: number }): void;
   setObjectFlag(id: string, flag: 'hidden' | 'locked', value: boolean): void;
   reorderOne(id: string, dir: 'up' | 'down'): void;
   toast(text: string): void;
@@ -117,6 +118,11 @@ export function initUI(store: Store, actions: UIActions): void {
   $<HTMLInputElement>('chk-snap-grid').addEventListener('change', (e) => store.updateSheet({ snapGrid: (e.target as HTMLInputElement).checked }));
   $<HTMLInputElement>('chk-snap-obj').addEventListener('change', (e) => store.updateSheet({ snapObjects: (e.target as HTMLInputElement).checked }));
   $<HTMLInputElement>('chk-smart').addEventListener('change', (e) => actions.setSmartGuides((e.target as HTMLInputElement).checked));
+
+  /* ---------- фигуры: многоугольник и звезда ---------- */
+  $<HTMLInputElement>('poly-sides').addEventListener('input', () => actions.setShapeParams({ polySides: val('poly-sides') }));
+  $<HTMLInputElement>('star-points').addEventListener('input', () => actions.setShapeParams({ starPoints: val('star-points') }));
+  $<HTMLInputElement>('star-inner').addEventListener('input', () => actions.setShapeParams({ starInner: val('star-inner') / 100 }));
 
   /* ---------- свойства ---------- */
   const applyGeometry = (): void => {

@@ -613,6 +613,8 @@ window.addEventListener('keydown', (e) => {
     case 'l': actions.setTool('line'); return;
     case 'r': actions.setTool('rect'); return;
     case 'e': actions.setTool('ellipse'); return;
+    case 'p': actions.setTool('polygon'); return;
+    case 's': actions.setTool('star'); return;
     case 't': actions.setTool('text'); return;
     case 'delete':
     case 'backspace':
@@ -709,6 +711,9 @@ const actions = {
   },
   setSmartGuides(on: boolean): void {
     store.setSmartGuides(on);
+  },
+  setShapeParams(p: { polySides?: number; starPoints?: number; starInner?: number }): void {
+    store.setShapeParams(p);
   },
   setObjectFlag(id: string, flag: 'hidden' | 'locked', value: boolean): void {
     setObjectFlag(store, id, flag, value);

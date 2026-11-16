@@ -1,5 +1,6 @@
 import type { Id, Obj, Style, SubPath, Vec2 } from './types';
 import { circleAsArcs } from './geom/arc';
+import { TAU } from './geom/arc';
 
 let counter = 0;
 export function uid(prefix = 'o'): Id {
@@ -50,6 +51,41 @@ export function ellipsePath(w: number, h: number): SubPath[] {
 export function linePath(len: number): SubPath[] {
   const a = { x: -len / 2, y: 0 }, b = { x: len / 2, y: 0 };
   return [{ closed: false, start: a, segs: [{ t: 'l', a, b }] }];
+}
+
+/** Правильный многоугольник: вписан в окружность радиуса r, центр (0,0), вершина — сверху. */
+export function polygonPath(r: number, sides: number): SubPath[] {
+  const n = Math.max(3, Math.min(64, Math.round(sides)));
+  const pts: Vec2[] = [];
+  for (let i = 0; i < n; i += 1) {
+    const ang = Math.PI / 2 + (i * TAU) / n;
+    pts.push({ x: Math.cos(ang) * r, y: Math.sin(ang) * r });
+  }
+  return [{
+    closed: true,
+    start: pts[0],
+    segs: pts.map((a, i) => ({ t: 'l' as const, a, b: pts[(i + 1) % n] })),
+  }];
+}
+
+/**
+ * Звезда: 2n вершин через одну — внешний радиус r и внутренний r*inner.
+ * inner — доля внутреннего радиуса (0,05…0,95).
+ */
+export function starPath(r: number, points: number, inner = 0.45): SubPath[] {
+  const n = Math.max(3, Math.min(32, Math.round(points)));
+  const k = Math.min(0.95, Math.max(0.05, inner));
+  const pts: Vec2[] = [];
+  for (let i = 0; i < n * 2; i += 1) {
+    const ang = Math.PI / 2 + (i * TAU) / (n * 2);
+    const rad = i % 2 === 0 ? r : r * k;
+    pts.push({ x: Math.cos(ang) * rad, y: Math.sin(ang) * rad });
+  }
+  return [{
+    closed: true,
+    start: pts[0],
+    segs: pts.map((a, i) => ({ t: 'l' as const, a, b: pts[(i + 1) % pts.length] })),
+  }];
 }
 
 export function defaultStyle(op: 'cut' | 'engrave' | 'score'): Style {

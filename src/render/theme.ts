@@ -12,6 +12,7 @@ export const theme = {
   hover: 'rgba(14, 165, 233, 0.55)',
   snap: '#f59e0b',
   align: '#a855f7',
+  spacing: '#10b981',
   handleFill: '#ffffff',
   handleStroke: '#0ea5e9',
   ink: '#1f2937',

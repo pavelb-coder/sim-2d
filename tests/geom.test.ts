@@ -10,7 +10,10 @@ import { makeObj } from '../src/core/shape';
 import { applyPatches, invertPatches, addCmd, removeCmd, updateCmd } from '../src/state/history';
 import { createDoc, emptyStyle } from '../src/core/doc';
 import { roundCorners } from '../src/core/geom/corners';
-import { smartAlign } from '../src/core/smart';
+import { smartAlign, smartSpacing } from '../src/core/smart';
+import { polygonPath, starPath } from '../src/core/shape';
+import { handleAxes, anchorFor, handlePoints, hitHandle } from '../src/render/handles';
+import { View } from '../src/render/view';
 
 let passed = 0;
 function test(name: string, fn: () => void): void {
@@ -290,6 +293,82 @@ test('умное выравнивание ловит центр листа', () 
   const res = smartAlign({ x: 141, y: 20, w: 20, h: 20 }, doc, sheet, 2);
   near(res.dx, -1, 1e-9); // центр 150: 141+10 = 151 → сдвиг -1
   assert.equal(res.lines.some((l) => l.axis === 'x' && Math.abs(l.at - 150) < 1e-9), true);
+});
+
+test('многоугольник: 12 сторон, вписан в радиус, вершина сверху', () => {
+  const path = polygonPath(10, 12);
+  assert.equal(path.length, 1);
+  assert.equal(path[0].segs.length, 12);
+  assert.equal(path[0].closed, true);
+  // вершина сверху: стартовая точка на оси Y
+  near(path[0].start.x, 0, 1e-9);
+  near(path[0].start.y, 10, 1e-9);
+  // все вершины на радиусе 10
+  for (const sg of path[0].segs) near(Math.hypot(sg.a.x, sg.a.y), 10, 1e-9);
+  // число сторон ограничено снизу
+  assert.equal(polygonPath(10, 1)[0].segs.length, 3);
+});
+
+test('звезда: 2n вершин, внутренний радиус = доля внешнего', () => {
+  const path = starPath(20, 5, 0.5);
+  assert.equal(path[0].segs.length, 10);
+  const radii = path[0].segs.map((sg) => Math.hypot(sg.a.x, sg.a.y));
+  near(Math.max(...radii), 20, 1e-9);
+  near(Math.min(...radii), 10, 1e-9);
+  // доля ограничена разумным диапазоном
+  const tight = starPath(20, 6, 0.01);
+  const r2 = tight[0].segs.map((sg) => Math.hypot(sg.a.x, sg.a.y));
+  near(Math.min(...r2) / Math.max(...r2), 0.05, 1e-9);
+});
+
+test('умные интервалы: объект встаёт посередине между соседями', () => {
+  const doc = createDoc();
+  const sheet = doc.sheets[0];
+  const mk = (cx: number, name: string) => makeObj({
+    sheetId: sheet.id, layerId: doc.layers[0].id, path: rectPath(20, 20),
+    transform: { ...IDENT, e: cx, f: 50 }, style: emptyStyle(doc.layers[0]), name,
+  });
+  const left = mk(20, 'L');   // занимает 10…30
+  const right = mk(120, 'R'); // занимает 110…130
+  const mid = mk(70, 'M');    // 60…80, зазор 30 / 30 — уже по центру
+  doc.objects[left.id] = left; doc.objects[right.id] = right; doc.objects[mid.id] = mid;
+  doc.order = [left.id, right.id, mid.id];
+
+  // сдвинули на 2 мм вправо: интервалы стали 32 / 28 → тянем назад в центр
+  const res = smartSpacing({ x: 62, y: 40, w: 20, h: 20 }, doc, sheet, 3, new Set([mid.id]));
+  near(res.dx, -2, 1e-9);
+  assert.equal(res.lines.some((l) => l.kind === 'gap'), true);
+
+  // вне допуска — не липнет
+  const far = smartSpacing({ x: 70, y: 40, w: 20, h: 20 }, doc, sheet, 1, new Set([mid.id]));
+  assert.equal(far.dx, 0);
+});
+
+test('ручки трансформации: попадание мышью и неподвижная точка', () => {
+  const view = new View(1200, 800);
+  view.scale = 2; // 2 px на мм
+  view.tx = 0; view.ty = 0;
+  const box = { x: 10, y: 10, w: 40, h: 20 };
+
+  // правый-нижний угол в мире → экран
+  const se = view.toScreen({ x: 50, y: 10 });
+  assert.equal(hitHandle(box, view, view.toMm({ x: se.x, y: se.y })), 'se');
+  assert.equal(hitHandle(box, view, view.toMm({ x: 0, y: 0 })), null);
+
+  // ручка поворота — над верхней гранью
+  const pts = handlePoints(box, view);
+  const rot = pts.find((p) => p.id === 'rotate');
+  assert.ok(rot);
+  assert.equal(hitHandle(box, view, view.toMm(rot.screen)), 'rotate');
+
+  // неподвижная точка при масштабе за 'se' — левый верхний угол
+  const anchor = anchorFor('se', box);
+  assert.ok(anchor);
+  near(anchor.x, 10, 1e-9);
+  near(anchor.y, 30, 1e-9);
+  // оси: 'n' двигает только Y, 'e' — только X
+  assert.deepEqual(handleAxes('n'), { x: false, y: true });
+  assert.deepEqual(handleAxes('e'), { x: true, y: false });
 });
 
 console.log(`\n${passed} тестов пройдено`);

@@ -31,6 +31,14 @@ export const TOOL_DEFS: ToolDef[] = [
     icon: '<ellipse cx="10.5" cy="10.5" rx="6.8" ry="5" fill="none" stroke="currentColor" stroke-width="1.7"/>',
   },
   {
+    id: 'polygon', label: 'Многоугольник', key: 'P', available: true,
+    icon: '<path d="M10.5 3.2l6.4 3.7v7.2l-6.4 3.7-6.4-3.7V6.9z" fill="none" stroke="currentColor" stroke-width="1.6"/>',
+  },
+  {
+    id: 'star', label: 'Звезда', key: 'S', available: true,
+    icon: '<path d="M10.5 2.8l2.3 4.9 5.3.7-3.9 3.7 1 5.2-4.7-2.6-4.7 2.6 1-5.2L3 8.4l5.3-.7z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/>',
+  },
+  {
     id: 'node', label: 'Узлы', key: 'N', available: true,
     icon: '<path d="M4 16c4-9 9-9 13 0" fill="none" stroke="currentColor" stroke-width="1.6"/><rect x="2.6" y="14.6" width="3" height="3" fill="currentColor"/><rect x="14.4" y="14.6" width="3" height="3" fill="currentColor"/>',
   },
@@ -47,6 +55,8 @@ export function createTools(): Record<string, Tool> {
     line: createShapeTool('line'),
     rect: createShapeTool('rect'),
     ellipse: createShapeTool('ellipse'),
+    polygon: createShapeTool('polygon'),
+    star: createShapeTool('star'),
     text: textTool,
   };
 }

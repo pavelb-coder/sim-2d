@@ -153,6 +153,24 @@
       <p class="phint">Тяните узел или сегмент мышью · Shift+клик — несколько узлов · рамка выделяет узлы · двойной клик по контуру добавляет узел · стрелки сдвигают узлы · квадрат — угловой узел, круг — гладкий, ромб — симметричный</p>
     </section>
 
+    <section class="pblock" data-panel="joints">
+      <h2>Соединения</h2>
+      <div class="field-row">
+        <label for="joint-mode">Тип</label>
+        <select id="joint-mode">
+          <option value="slot">Паз (гнездо)</option>
+          <option value="dovetail">Ласточкин хвост</option>
+          <option value="tab">Шип (выступ)</option>
+        </select>
+      </div>
+      <div class="field-pair">
+        <div class="field"><label for="joint-clearance">Зазор, мм</label><input type="number" id="joint-clearance" step="0.05" min="0" max="1" value="0.1"></div>
+        <div class="field"><label for="joint-depth">Глубина, мм</label><input type="number" id="joint-depth" step="0.5" min="0" max="50" value="0"></div>
+      </div>
+      <p class="phint" id="joint-hint">Инструмент «Паз» (J): клик по ребру детали вырезает паз под толщину материала.
+      Глубина 0 — на всю толщину; зазор оставляет люфт, чтобы шип вошёл после реза.</p>
+    </section>
+
     <section class="pblock" data-panel="material">
       <h2>Материал и рез</h2>
       <div class="field-row">

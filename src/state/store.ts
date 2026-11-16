@@ -1,11 +1,12 @@
-import type { Doc, Id, Layer, Material, Obj, Sheet, Style } from '../core/types';
+import type { Doc, Id, Layer, Material, Mm, Obj, Sheet, Style } from '../core/types';
 import { activeSheet, createDoc, emptyStyle } from '../core/doc';
 import { History, applyPatches, updateCmd, type Command, type Patch } from './history';
 import { invalidateSnapCache } from '../core/snap';
 import type { View } from '../render/view';
 import { materialOf } from '../core/geom/kerf';
+import type { JointMode } from '../core/geom/joint';
 
-export type ToolId = 'select' | 'line' | 'rect' | 'ellipse' | 'polygon' | 'star' | 'node' | 'text';
+export type ToolId = 'select' | 'line' | 'rect' | 'ellipse' | 'polygon' | 'star' | 'node' | 'text' | 'joint';
 export type ChangeKind = 'doc' | 'selection' | 'view' | 'tool' | 'ui';
 
 export interface AppState {
@@ -25,6 +26,8 @@ export interface AppState {
   starPoints: number;
   /** доля внутреннего радиуса звезды (0,05…0,95) */
   starInner: number;
+  /** настройки соединения «паз — шип» (толщина берётся из материала) */
+  joint: { mode: JointMode; clearance: Mm; depth: Mm };
 }
 
 type Listener = (state: AppState, kind: ChangeKind) => void;
@@ -50,6 +53,7 @@ export class Store {
       polySides: 6,
       starPoints: 5,
       starInner: 0.45,
+      joint: { mode: 'slot', clearance: 0.1, depth: 0 },
     };
   }
 
@@ -173,6 +177,18 @@ export class Store {
     if (p.starInner !== undefined) next.starInner = Math.max(0.05, Math.min(0.95, p.starInner));
     this.state = next;
     this.emit('ui');
+  }
+
+  /** Параметры соединения: зазор, глубина (0 — по толщине) и тип. */
+  setJointSettings(patch: Partial<{ mode: JointMode; clearance: Mm; depth: Mm }>): void {
+    const cur = this.state.joint;
+    const next = {
+      mode: patch.mode ?? cur.mode,
+      clearance: Math.max(0, Math.min(1, patch.clearance ?? cur.clearance)),
+      depth: Math.max(0, Math.min(50, patch.depth ?? cur.depth)),
+    };
+    this.state = { ...this.state, joint: next };
+    this.emit('doc');
   }
 
   setSmartGuides(on: boolean): void {

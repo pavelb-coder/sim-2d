@@ -84,6 +84,7 @@ window.addEventListener('error', (e) => errors.push(String(e.message)));
 process.on('uncaughtException', (e) => {
   // не глотаем фатальные ошибки молча: без этого падение при старте выглядело как «пустой» тест
   console.error('  ! uncaught:', String(e));
+  if (e && e.stack) console.error(String(e.stack).split('\n').slice(0, 8).join('\n'));
   errors.push(String(e));
 });
 
@@ -109,7 +110,7 @@ const key = (k, extra = {}) => window.dispatchEvent(new window.KeyboardEvent('ke
 
 console.log('dom / boot');
 
-ok(window.document.querySelectorAll('.tool-btn').length === 8, 'панель инструментов: 8 кнопок (включая многоугольник и звезду)');
+ok(window.document.querySelectorAll('.tool-btn').length === 9, 'панель инструментов: 9 кнопок (включая многоугольник, звезду и паз)');
 const N0 = Number(count().replace(/\D+/g, ''));
 ok(N0 >= 5, `демо-документ загружен (${count()})`);
 ok(text('#st-sheet').includes('300'), `лист в мм: ${text('#st-sheet')}`);
@@ -688,6 +689,102 @@ ok(JSON.stringify(afterNudgeObj.transform) === JSON.stringify(beforeNudgeObj.tra
 key('z', { ctrlKey: true });
 key('z', { ctrlKey: true });
 key('z', { ctrlKey: true });
+$('.tool-btn[data-tool="select"]').click();
+
+console.log('соединение «паз — шип» (инструмент «Паз», J)');
+
+// квадрат 60×60 в фанере 3 мм: паз должен быть 2,9 × 3 мм
+store.updateMaterial({ thickness: 3, kerf: 0.12, presetId: 'plywood-3', name: 'Фанера 3 мм' });
+$('.tool-btn[data-tool="rect"]').click();
+pointer('pointerdown', 700, 300);
+pointer('pointermove', 800, 400);
+pointer('pointerup', 800, 400);
+const jointId = store.state.selection[0];
+const jObj = store.state.doc.objects[jointId];
+const jBox = (() => {
+  const xs = [], ys = [];
+  for (const sp of jObj.path) {
+    for (const p of [sp.start, ...sp.segs.map((sg) => sg.b)]) {
+      xs.push(jObj.transform.a * p.x + jObj.transform.c * p.y + jObj.transform.e);
+      ys.push(jObj.transform.b * p.x + jObj.transform.d * p.y + jObj.transform.f);
+    }
+  }
+  return { x0: Math.min(...xs), x1: Math.max(...xs), y0: Math.min(...ys), y1: Math.max(...ys) };
+})();
+const jAreaOf = (id) => {
+  const ob = window.lcx.store.state.doc.objects[id];
+  const scale = Math.abs(ob.transform.a * ob.transform.d - ob.transform.b * ob.transform.c) || 1;
+  let area = 0;
+  for (const sp of ob.path) {
+    const pts = [sp.start, ...sp.segs.map((sg) => sg.b)];
+    let a = 0;
+    for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) a += (pts[j].x - pts[i].x) * (pts[j].y + pts[i].y);
+    area += Math.abs(a / 2);
+  }
+  return area * scale;
+};
+
+// инструмент «Паз» включается клавишей J
+key('j');
+ok(store.state.tool === 'joint', 'клавиша J включает инструмент «Паз»');
+
+const jBefore = { count: Number(count().replace(/\D+/g, '')), path: JSON.stringify(store.state.doc.objects[jointId].path), area: jAreaOf(jointId) };
+// клик по середине верхнего ребра
+const jTopMid = view.toScreen({ x: (jBox.x0 + jBox.x1) / 2, y: jBox.y1 });
+pointer('pointermove', jTopMid.x, jTopMid.y - 2);
+ok(window.lcx.joint.hover !== null, 'превью нашло ребро под курсором');
+pointer('pointerdown', jTopMid.x, jTopMid.y - 2);
+pointer('pointerup', jTopMid.x, jTopMid.y - 2);
+const jAfter = store.state.doc.objects[jointId];
+ok(JSON.stringify(jAfter.path) !== jBefore.path, 'паз вырезан в контуре');
+ok(Math.abs(jAfter.transform.a - 1) < 1e-9 && Math.abs(jAfter.transform.b) < 1e-9, 'геометрия запечена (матрица единичная)');
+ok(Number(count().replace(/\D+/g, '')) === jBefore.count, 'число объектов не изменилось — паз часть детали');
+
+// площадь уменьшилась ровно на ширину × глубину (2,9 × 3 = 8,7 мм²)
+const pts2 = jAfter.path[0].segs.length;
+ok(pts2 > 4, `у контура появились точки паза (${pts2} сегментов)`);
+// ровно «толщина − зазор» на глубину: (3 − 0,1) × 3 = 8,7 мм²
+const jCut = jBefore.area - jAreaOf(jointId);
+ok(Math.abs(jCut - 8.7) < 0.05, `паз вырезал ${jCut.toFixed(2)} мм² (ожидалось 8,7)`);
+
+// повторный клик рядом вырезает второй паз
+const jLeftMid = view.toScreen({ x: jBox.x0, y: (jBox.y0 + jBox.y1) / 2 });
+pointer('pointerdown', jLeftMid.x + 2, jLeftMid.y);
+pointer('pointerup', jLeftMid.x + 2, jLeftMid.y);
+ok(JSON.stringify(store.state.doc.objects[jointId].path) !== JSON.stringify(jAfter.path), 'второй паз вырезан по другому ребру');
+
+// undo отменяет ровно один паз
+key('z', { ctrlKey: true });
+ok(JSON.stringify(store.state.doc.objects[jointId].path) === JSON.stringify(jAfter.path), 'undo отменил только последний паз');
+key('z', { ctrlKey: true });
+ok(JSON.stringify(store.state.doc.objects[jointId].path) === jBefore.path, 'второй undo вернул деталь без пазов');
+
+// режим «Ласточкин хвост» и «Шип» из панели
+const jSelMode = $('#joint-mode');
+jSelMode.value = 'dovetail';
+jSelMode.dispatchEvent(new window.Event('change', { bubbles: true }));
+ok(store.state.joint.mode === 'dovetail', 'панель переключает тип соединения');
+const jHint = $('#joint-hint').textContent;
+ok(jHint.includes('ласточкин хвост'), 'подсказка описывает выбранный тип');
+
+const jClearInput = $('#joint-clearance');
+jClearInput.value = '0.2';
+jClearInput.dispatchEvent(new window.Event('change', { bubbles: true }));
+ok(Math.abs(store.state.joint.clearance - 0.2) < 1e-9, 'зазор из панели применился');
+
+// шип — добавка материала наружу
+jSelMode.value = 'tab';
+jSelMode.dispatchEvent(new window.Event('change', { bubbles: true }));
+const tabAreaBefore = jAreaOf(jointId);
+pointer('pointerdown', jTopMid.x, jTopMid.y - 2);
+pointer('pointerup', jTopMid.x, jTopMid.y - 2);
+const tabAreaAfter = jAreaOf(jointId);
+ok(tabAreaAfter > tabAreaBefore, `шип добавил материал наружу (${tabAreaBefore.toFixed(1)} → ${tabAreaAfter.toFixed(1)} мм²)`);
+key('z', { ctrlKey: true });
+ok(Math.abs(jAreaOf(jointId) - tabAreaBefore) < 0.01, 'undo убрал шип');
+
+jSelMode.value = 'slot';
+jSelMode.dispatchEvent(new window.Event('change', { bubbles: true }));
 $('.tool-btn[data-tool="select"]').click();
 
 console.log('в кривые (Ctrl+Q)');

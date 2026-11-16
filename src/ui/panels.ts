@@ -48,6 +48,8 @@ export interface UIActions {
   applyKerf(): void;
   /** «В кривые»: запечь матрицу и заменить дуги кривыми (Ctrl+Q) */
   toCurves(): void;
+  /** настройки соединения «паз — шип» */
+  setJointSettings(patch: Partial<{ mode: 'slot' | 'dovetail' | 'tab'; clearance: number; depth: number }>): void;
   /** текст по контуру выделенного объекта */
   textOnPath(text: string, height: number, offset: number, align: 'start' | 'center' | 'end'): void;
   setTextHeight(mm: number): void;
@@ -276,6 +278,13 @@ export function initUI(store: Store, actions: UIActions): void {
 
   bind('obj-curves', () => actions.toCurves());
 
+  /* ---------- блок «Соединения» ---------- */
+  $<HTMLSelectElement>('joint-mode').addEventListener('change', (e) => {
+    actions.setJointSettings({ mode: (e.target as HTMLSelectElement).value as 'slot' | 'dovetail' | 'tab' });
+  });
+  $('joint-clearance').addEventListener('change', () => actions.setJointSettings({ clearance: val('joint-clearance') }));
+  $('joint-depth').addEventListener('change', () => actions.setJointSettings({ depth: val('joint-depth') }));
+
   /* ---------- блок «Материал и рез» ---------- */
   const matSel = $<HTMLSelectElement>('mat-preset');
   for (const p of MATERIAL_PRESETS) {
@@ -324,6 +333,18 @@ export function initUI(store: Store, actions: UIActions): void {
     }
     $<HTMLButtonElement>('btn-undo').disabled = !store.history.canUndo;
     $<HTMLButtonElement>('btn-redo').disabled = !store.history.canRedo;
+
+    const joint = state.joint;
+    $<HTMLSelectElement>('joint-mode').value = joint.mode;
+    setVal('joint-clearance', joint.clearance);
+    setVal('joint-depth', joint.depth);
+    const jointMat = materialOf(state.doc);
+    const jointWidth = Math.max(0.1, jointMat.thickness - joint.clearance);
+    const jointDepth = joint.depth > 0 ? joint.depth : jointMat.thickness;
+    const jointName = joint.mode === 'tab' ? 'шип' : joint.mode === 'dovetail' ? 'паз «ласточкин хвост»' : 'паз';
+    $('joint-hint').textContent = `Инструмент «Паз» (J): клик по ребру детали — ${jointName} `
+      + `${+jointWidth.toFixed(2)} × ${+jointDepth.toFixed(2)} мм в материале ${jointMat.name.toLowerCase()}. `
+      + 'Глубина 0 — на всю толщину; зазор оставляет люфт, чтобы шип вошёл после реза.';
 
     const mat = materialOf(state.doc);
     matSel.value = presetById(mat.presetId) ? mat.presetId : 'custom';

@@ -62,7 +62,16 @@
   </main>
 
   <aside class="panel">
-    <section class="pblock">
+    <div class="panel-tools">
+      <span class="panel-tools-label">Панели</span>
+      <button class="icon-btn" id="panels-expand" title="Развернуть все секции" aria-label="Развернуть все секции">
+        <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4.5l4 3.5 4-3.5"/><path d="M4 9l4 3.5L12 9"/></svg>
+      </button>
+      <button class="icon-btn" id="panels-collapse" title="Свернуть все секции" aria-label="Свернуть все секции">
+        <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 11.5L8 8l4 3.5"/><path d="M4 7l4-3.5L12 7"/></svg>
+      </button>
+    </div>
+    <section class="pblock" data-panel="sheet">
       <h2>Лист</h2>
       <div class="field-row">
         <label for="sheet-preset">Формат</label>
@@ -85,7 +94,7 @@
       <label class="check"><input type="checkbox" id="chk-smart" checked> Умные направляющие</label>
     </section>
 
-    <section class="pblock">
+    <section class="pblock" data-panel="object">
       <h2>Объект</h2>
       <p class="pempty" id="props-empty">Ничего не выбрано</p>
       <p class="pempty" id="group-note" hidden>Выбрано несколько объектов</p>
@@ -114,7 +123,7 @@
       </div>
     </section>
 
-    <section class="pblock" id="block-nodes" hidden>
+    <section class="pblock" data-panel="nodes" id="block-nodes" hidden>
       <h2>Узлы</h2>
       <div class="btn-grid">
         <button class="ghost-btn" id="node-curve">В кривую</button>
@@ -131,7 +140,7 @@
       <p class="phint">Тяните узел мышью · Shift+клик — несколько узлов · рамка выделяет узлы · двойной клик по контуру добавляет узел · тяните круглые ручки, чтобы менять кривизну</p>
     </section>
 
-    <section class="pblock">
+    <section class="pblock" data-panel="ops">
       <h2>Операции</h2>
       <div class="btn-grid">
         <button class="ghost-btn" id="op-union">Сварить</button>
@@ -150,7 +159,7 @@
       <p class="phint">Для сварки и вычитания нужно ≥ 2 объекта. Операции дают полилинии — кривые теряются.</p>
     </section>
 
-    <section class="pblock">
+    <section class="pblock" data-panel="shapes">
       <h2>Фигуры</h2>
       <div class="field-pair">
         <div class="field"><label for="poly-sides">Сторон</label><input type="number" id="poly-sides" value="6" min="3" max="64"></div>
@@ -163,7 +172,7 @@
       <p class="phint">Инструменты «Многоугольник» (P) и «Звезда» (S) тянутся в габаритном прямоугольнике, как в CorelDRAW.</p>
     </section>
 
-    <section class="pblock">
+    <section class="pblock" data-panel="corners">
       <h2>Углы</h2>
       <div class="field-row">
         <label for="corner-mm">Радиус / срез, мм</label>
@@ -176,7 +185,7 @@
       <p class="phint">Как Fillet / Chamfer в CorelDRAW: углы контура заменяются дугой или срезом. Кривые Безье в контуре теряются.</p>
     </section>
 
-    <section class="pblock">
+    <section class="pblock" data-panel="dupes">
       <h2>Копии</h2>
       <div class="field-pair">
         <div class="field"><label for="dup-count">Количество</label><input type="number" id="dup-count" value="3" min="1" max="60"></div>
@@ -188,7 +197,7 @@
       </div>
     </section>
 
-    <section class="pblock">
+    <section class="pblock" data-panel="nest">
       <h2>Раскладка на листе</h2>
       <div class="field-pair">
         <div class="field"><label for="nest-gap">Зазор, мм</label><input type="number" id="nest-gap" value="3" step="0.5" min="0" max="50"></div>
@@ -202,7 +211,7 @@
       <p class="phint">Полочная раскладка: детали выравниваются рядами по габариту. Ручная раскладка — просто перетащите детали.</p>
     </section>
 
-    <section class="pblock">
+    <section class="pblock" data-panel="align">
       <h2>Выравнивание</h2>
       <div class="align-grid" id="align-grid">
         <button data-align="left" title="По левому краю" aria-label="По левому краю">⇤</button>
@@ -228,13 +237,13 @@
       </div>
     </section>
 
-    <section class="pblock">
+    <section class="pblock" data-panel="objects">
       <h2>Объекты</h2>
       <div class="objlist" id="obj-list" role="list"></div>
       <p class="phint">Глаз — скрыть, замок — заблокировать, стрелки — порядок. Клик по имени выделяет объект.</p>
     </section>
 
-    <section class="pblock">
+    <section class="pblock" data-panel="style">
       <h2>Слой и стиль</h2>
       <div class="seg" id="layer-seg">
         <button data-layer-op="cut" class="seg-btn is-active">Рез</button>
@@ -267,7 +276,7 @@
       <p class="phint">Заливка и градиент видны на экране и в SVG; на резку (DXF) не влияют.</p>
     </section>
 
-    <section class="pblock" id="block-text">
+    <section class="pblock" data-panel="text" id="block-text">
       <h2>Текст</h2>
       <div class="field-row">
         <label for="text-height">Высота букв, мм</label>
@@ -292,7 +301,7 @@
       <p class="phint">Выделите контур — надпись пойдёт вдоль него, буквы повернутся по касательной. Контур остаётся на месте.</p>
     </section>
 
-    <section class="pblock">
+    <section class="pblock" data-panel="check">
       <h2>Проверка <span class="pill" id="check-summary">нет замечаний</span></h2>
       <div class="stats" id="stats"></div>
       <ul class="issues" id="issues"></ul>
@@ -302,7 +311,7 @@
       </div>
     </section>
 
-    <section class="pblock">
+    <section class="pblock" data-panel="project">
       <h2>Проект</h2>
       <p class="phint" id="autosave-status">Автосохранение: —</p>
       <div class="btn-row">

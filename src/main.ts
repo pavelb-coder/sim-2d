@@ -32,6 +32,7 @@ import { nodeToolState, nodeOpBreak, nodeOpClose, nodeOpCurve, nodeOpDelete, nod
 import { setTextHeight } from './tools/text';
 
 import { initUI, setAutosaveStatus, setIssues, setStats } from './ui/panels';
+import { collapseAll, initPanelCollapse, isCollapsed } from './ui/panelsCollapse';
 import { demoDoc } from './core/demo';
 
 /* ------------------------------------------------------------------ setup */
@@ -835,6 +836,7 @@ const actions = {
 };
 
 initUI(store, actions);
+initPanelCollapse();
 
 /* ------------------------------------------------------------------ focus issue event */
 window.addEventListener('lcx:focus-issue', (e) => {
@@ -872,4 +874,8 @@ document.getElementById('file-input')?.addEventListener('change', (e) => {
 });
 
 /* экспорт доступен и из консоли (удобно для проверок) */
-(window as unknown as { lcx?: unknown }).lcx = { store, view, exportDxf, exportSvg, validateDoc, boxUnion };
+(window as unknown as { lcx?: unknown }).lcx = {
+  store, view, exportDxf, exportSvg, validateDoc, boxUnion,
+  // панели: состояние секций (пригодится и для отладки)
+  panels: { init: initPanelCollapse, collapseAll, isCollapsed },
+};

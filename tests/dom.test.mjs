@@ -6,7 +6,8 @@ import { JSDOM } from 'jsdom';
 import { readFileSync } from 'node:fs';
 
 const html = readFileSync(new URL('../site/index.html', import.meta.url), 'utf8');
-const dom = new JSDOM(html, { pretendToBeVisual: true, runScripts: 'outside-only' });
+// url нужен, чтобы работал localStorage (на about:blank он запрещён как opaque origin)
+const dom = new JSDOM(html, { pretendToBeVisual: true, runScripts: 'outside-only', url: 'http://localhost/' });
 const { window } = dom;
 
 /* ---------- заглушки браузерных API, которых нет в jsdom ---------- */
@@ -489,6 +490,50 @@ ok(textObjId !== fillId, 'новый объект выделен');
 ok(store.state.doc.objects[textObjId].path.length >= 2, `в объекте ${store.state.doc.objects[textObjId].path.length} контуров букв`);
 key('z', { ctrlKey: true });
 ok(num() === objCountBefore, 'undo убрал текст по контуру');
+
+console.log('сворачиваемые панели (докеры)');
+
+const blocks = [...window.document.querySelectorAll('aside.panel .pblock')];
+ok(blocks.length === 14, `в панели ${blocks.length} блоков`);
+ok(blocks.every((b) => b.querySelector('h2.phead[role="button"]')), 'у каждого блока заголовок-кнопка');
+ok(blocks.every((b) => !!b.dataset.panel), 'у каждого блока есть стабильный ключ data-panel');
+ok(blocks.every((b) => !b.classList.contains('is-collapsed')), 'по умолчанию все блоки развёрнуты');
+
+const first = blocks[0];
+const firstHead = first.querySelector('h2.phead');
+firstHead.click();
+ok(first.classList.contains('is-collapsed'), 'клик по заголовку сворачивает блок');
+ok(firstHead.getAttribute('aria-expanded') === 'false', 'aria-expanded стал false');
+ok(JSON.parse(window.localStorage.getItem('lasercut.panels.v1') ?? '[]').includes(first.dataset.panel),
+  'состояние сохранилось в localStorage');
+firstHead.click();
+ok(!first.classList.contains('is-collapsed'), 'повторный клик разворачивает блок');
+
+// Alt+клик — аккордеон: открыт только один блок
+const second = blocks[1];
+second.querySelector('h2.phead').dispatchEvent(new window.MouseEvent('click', { bubbles: true, altKey: true }));
+ok(!second.classList.contains('is-collapsed'), 'Alt+клик оставил открытым свой блок');
+ok(blocks.filter((b) => !b.classList.contains('is-collapsed')).length === 1, 'остальные блоки свёрнуты');
+
+// кнопки «свернуть/развернуть всё»
+window.document.getElementById('panels-collapse').click();
+ok(blocks.every((b) => b.classList.contains('is-collapsed')), 'кнопка «свернуть всё» свернула все блоки');
+window.document.getElementById('panels-expand').click();
+ok(blocks.every((b) => !b.classList.contains('is-collapsed')), 'кнопка «развернуть всё» вернула все блоки');
+ok(JSON.parse(window.localStorage.getItem('lasercut.panels.v1')).length === 0, 'в памяти пусто после разворота');
+
+// восстановление состояния: пишем в память и инициализируем панели заново
+window.localStorage.setItem('lasercut.panels.v1', JSON.stringify(['ops', 'check']));
+window.lcx.panels.init();
+ok(window.lcx.panels.isCollapsed('ops') && window.lcx.panels.isCollapsed('check'), 'свёрнутые блоки восстановлены из памяти');
+ok(!window.lcx.panels.isCollapsed('sheet'), 'остальные блоки остались развёрнутыми');
+window.document.getElementById('panels-expand').click();
+window.lcx.panels.init();
+
+// клавиатура: Enter на заголовке тоже переключает
+firstHead.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+ok(first.classList.contains('is-collapsed'), 'Enter на заголовке сворачивает блок');
+firstHead.click();
 
 console.log('экспорт (без скачивания)');
 const dxf = window.lcx.exportDxf(store.state.doc);

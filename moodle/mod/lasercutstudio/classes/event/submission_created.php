@@ -87,6 +87,6 @@ class submission_created extends \core\event\base {
      * @return array
      */
     public static function get_objectid_mapping() {
-        return ['db' => 'lasercutstudio_submissions', 'restore' => 'lasercutstudio_submissions'];
+        return ['db' => 'lasercutstudio_submissions', 'restore' => 'lasercutstudio_submission'];
     }
 }

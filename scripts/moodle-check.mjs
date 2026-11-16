@@ -12,6 +12,9 @@
  *  7. все таблицы из $DB-запросов объявлены в db/install.xml;
  *  8. сборка редактора editor/index.html на месте и совпадает с site/index.html по sha256;
  *  9. в «библиотечных» файлах есть защита defined('MOODLE_INTERNAL') || die();
+ * 10. имена, которые задаёт ядро Moodle: класс формы — mod_<modname>_mod_form,
+ *     колбэки модуля в lib.php — <modname>_*, файл-колбэк — mod_<modname>_pluginfile;
+ * 11. у каждого события есть get_objectid_mapping (иначе восстановление логов падает).
  */
 import { readFile, readdir, stat } from 'node:fs/promises';
 import { spawnSync } from 'node:child_process';
@@ -155,6 +158,64 @@ for (const file of needsGuard) {
   }
 }
 ok.push(`защита MOODLE_INTERNAL: проверено ${needsGuard.length} файл(ов)`);
+
+/* ---------- 10. имена, заданные ядром Moodle ---------- */
+// Ядро строит имя класса формы как 'mod_' . $modname . '_mod_form' (course/modedit.php:162),
+// поэтому префикс mod_ тут обязателен...
+const modFormPath = `${plugin}/mod_form.php`;
+try {
+  const src = await read(modFormPath);
+  const cls = src.match(/class\s+([A-Za-z0-9_]+)\s+extends\s+moodleform_mod/);
+  if (!cls) {
+    errors.push('mod_form.php: не найден класс, расширяющий moodleform_mod');
+  } else if (cls[1] !== 'mod_lasercutstudio_mod_form') {
+    errors.push(`mod_form.php: класс должен называться mod_lasercutstudio_mod_form, а не ${cls[1]} ` +
+      '(ядро ищет именно это имя, иначе «Добавить элемент» падает с Class not found)');
+  } else {
+    ok.push('форма настроек: mod_lasercutstudio_mod_form');
+  }
+} catch {
+  errors.push('нет mod_form.php — элемент курса нельзя будет создать через интерфейс');
+}
+
+// ...а вот колбэки модуля, наоборот, вызываются как '<modname>_add_instance' и т.д.
+const lib = await read(`${plugin}/lib.php`);
+const modPrefixed = [...lib.matchAll(/function\s+(mod_lasercutstudio_[a-z_]+)\s*\(/g)]
+  .map((m) => m[1])
+  .filter((name) => name !== 'mod_lasercutstudio_pluginfile');
+if (modPrefixed.length) {
+  errors.push(`lib.php: колбэки не должны начинаться с mod_ (ядро зовёт lasercutstudio_*): ${modPrefixed.join(', ')}`);
+}
+if (!/function\s+mod_lasercutstudio_pluginfile\s*\(/.test(lib)) {
+  errors.push('lib.php: нет mod_lasercutstudio_pluginfile — файлы не будут раздаваться');
+}
+if (!modPrefixed.length) {
+  ok.push('колбэки модуля: имена без префикса mod_ (pluginfile — с префиксом)');
+}
+
+// ---------- 11. события и их маппинг ---------- */
+const eventFiles = files.filter((f) => /\/classes\/event\/[a-z_]+\.php$/.test(f));
+for (const file of eventFiles) {
+  const src = await read(file);
+  if (!src.includes('function get_objectid_mapping')) {
+    errors.push(`${file}: нет get_objectid_mapping() — восстановление курса упадёт`);
+  }
+}
+const restoreSteps = await read(`${plugin}/backup/moodle2/restore_lasercutstudio_stepslib.php`);
+const mappings = new Set([...restoreSteps.matchAll(/set_mapping\(\s*'([a-z_]+)'/g)].map((m) => m[1]));
+// элементы пути (<restore_path_element>) маппинг получают автоматически
+for (const m of restoreSteps.matchAll(/new restore_path_element\(\s*'([a-z_]+)'/g)) mappings.add(m[1]);
+for (const file of eventFiles) {
+  const src = await read(file);
+  const m = src.match(/get_objectid_mapping\(\)\s*\{\s*return\s*\[([^\]]+)\]/);
+  if (!m) continue;
+  const restore = (m[1].match(/'restore'\s*=>\s*'([a-z_]+)'/) || [])[1];
+  if (restore && !mappings.has(restore)) {
+    errors.push(`${file}: маппинг '${restore}' не регистрируется в restore_stepslib ` +
+      `(set_mapping: ${[...mappings].join(', ')}) — восстановление логов упадёт`);
+  }
+}
+ok.push(`события: ${eventFiles.length} файл(ов) с маппингом, ключи сходятся с restore`);
 
 /* ---------- отчёт ---------- */
 console.log('Проверка плагина mod_lasercutstudio\n');

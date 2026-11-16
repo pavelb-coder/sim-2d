@@ -81,4 +81,13 @@ class submission_graded extends \core\event\base {
             throw new \coding_exception('The relateduserid must be set.');
         }
     }
+
+    /**
+     * Maps the submission id when logs are restored.
+     *
+     * @return array
+     */
+    public static function get_objectid_mapping() {
+        return ['db' => 'lasercutstudio_submissions', 'restore' => 'lasercutstudio_submission'];
+    }
 }

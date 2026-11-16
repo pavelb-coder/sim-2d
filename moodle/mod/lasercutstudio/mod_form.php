@@ -29,7 +29,9 @@ require_once($CFG->dirroot . '/course/moodleform_mod.php');
 /**
  * Module settings form.
  */
-class lasercutstudio_mod_form extends moodleform_mod {
+// Имя класса задано ядром: course/modedit.php строит его как 'mod_' . $modname . '_mod_form'.
+// Префикс mod_ здесь обязателен — в отличие от колбэков модуля в lib.php.
+class mod_lasercutstudio_mod_form extends moodleform_mod {
 
     /**
      * Form definition.

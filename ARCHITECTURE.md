@@ -659,6 +659,8 @@ js/parent.js  ◀──postMessage('ready'|'submit')──  бриф-мост в
 | Оценка не попадает в журнал | в `grade_update()` передан объект вместо массива по пользователям | `[$userid => $grade]` |
 | `dml_missing_record_exception` при сохранении | `file_save_draft_area_files(0, …)` — нет контекста пользователя | пропускать пустой `draftitemid` |
 | Форма сдачи «ничего не делает» | у `moodleform` action по умолчанию — текущая страница | передавать `new moodle_url('/mod/lasercutstudio/submit.php', …)` в конструктор |
+| `Class "mod_lasercutstudio_mod_form" not found` при добавлении/редактировании элемента курса | после массового переименования колбэков (без префикса `mod_`) задело и класс формы настроек | класс должен называться ровно `mod_<modname>_mod_form` (ядро строит имя в `course/modedit.php:162`); колбэки — наоборот, без префикса. Проверяется в `npm run moodle:check` |
+| Восстановление логов падает с `unknown_objectid_mapping` | у события нет `get_objectid_mapping()` или ключ `restore` не совпадает с тем, что регистрирует `set_mapping()` в restore-шагах | маппинг у всех событий, ключи сверяются автоматически в `moodle:check` |
 | Список сдач пуст, хотя сдачи есть | `get_record('user', …, 'u.id, u.firstname…')` — префиксы в списке полей | запрашивать `'*'` или поля без префиксов |
 
 ### 16.3 Что проверено на живом Moodle 5.0.11 / PHP 8.4

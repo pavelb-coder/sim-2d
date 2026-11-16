@@ -30,6 +30,21 @@ export interface Layer {
 
 export interface Guide { id: Id; axis: 'x' | 'y'; at: Mm }
 
+/**
+ * Материал заготовки и компенсация реза.
+ * Лазер вырезает канавку шириной kerf, поэтому деталь выходит меньше чертежа
+ * на kerf/2 с каждого края — при экспорте контур расширяют на эту величину.
+ */
+export interface Material {
+  /** id пресета из MATERIAL_PRESETS или 'custom' */
+  presetId: string;
+  name: string;
+  thickness: Mm;
+  kerf: Mm;
+  /** учитывать рез при экспорте DXF */
+  compensate: boolean;
+}
+
 export interface Sheet {
   id: Id;
   name: string;
@@ -83,5 +98,7 @@ export interface Doc {
   layers: Layer[];
   objects: Record<Id, Obj>;
   order: Id[];
+  /** материал и компенсация реза; в старых проектах отсутствует */
+  material?: Material;
   meta: { name: string; createdAt: string; app: 'lasercut-studio' };
 }

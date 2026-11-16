@@ -1,4 +1,5 @@
 import type { Id, Obj, SubPath } from '../core/types';
+import { sheetObjects } from '../core/doc';
 import { nestObjects, type NestOptions } from '../core/nest';
 import { rotateBy, mirror } from './edits';
 import { booleanPaths, offsetPaths, pathsArea, unionPaths, type BoolOp } from '../core/geom/boolean';
@@ -8,6 +9,7 @@ import { makeObj, uid } from '../core/shape';
 import { roundCorners, type CornerMode } from '../core/geom/corners';
 import { textOnPath, type TextAlign } from '../core/textPath';
 import { addCmd, removeCmd, updateCmd, type Patch } from './history';
+import { compensateKerf, materialOf } from '../core/geom/kerf';
 import type { Store } from './store';
 
 const worldOf = (obj: Obj): SubPath[] => transformSubPaths(obj.path, obj.transform);
@@ -69,6 +71,39 @@ export function applyOffset(store: Store, deltaMm: number): string | null {
   }
   store.commit({ label: deltaMm > 0 ? 'Контур наружу' : 'Контур внутрь', patches });
   void skipped;
+  return null;
+}
+
+/**
+ * Учесть рез в геометрии: расширить контуры слоёв «рез» на kerf/2.
+ *
+ * Деталь после лазера выходит меньше чертежа на половину реза с каждого края,
+ * поэтому контур заранее раздувают. Работает по выделению, а если ничего не
+ * выделено — по всем контурам реза на листе. Гравировка и разметка не трогаются.
+ * Результат — полилинии (как «Контур наружу»), откатывается одним undo.
+ */
+export function applyKerf(store: Store): string | null {
+  const doc = store.state.doc;
+  const mat = materialOf(doc);
+  if (mat.kerf <= 0) return 'Задайте ширину реза в блоке «Материал»';
+
+  const cutLayers = new Set(doc.layers.filter((l) => l.op === 'cut').map((l) => l.id));
+  const all = sheetObjects(doc, store.state.sheet.id).filter((o) => cutLayers.has(o.layerId) && !o.locked);
+  const picked = store.selected();
+  const targets = picked.length ? all.filter((o) => picked.some((p) => p.id === o.id)) : all;
+  if (!targets.length) return picked.length
+    ? 'Выделенные объекты не на слое реза — компенсация нужна только контурам реза'
+    : 'На листе нет контуров реза';
+
+  const patches: Patch[] = [];
+  for (const obj of targets) {
+    const result = compensateKerf(worldOf(obj), mat.kerf);
+    if (!result.length) continue;
+    const after = { ...resultObject(store, obj, result, obj.name ?? 'Деталь'), id: obj.id, name: obj.name };
+    patches.push({ kind: 'update', before: obj, after });
+  }
+  if (!patches.length) return 'Не удалось построить компенсированные контуры';
+  store.commit({ label: `Учесть рез ${mat.kerf} мм`, patches });
   return null;
 }
 

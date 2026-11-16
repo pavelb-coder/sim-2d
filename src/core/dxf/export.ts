@@ -2,6 +2,7 @@ import type { Box, Doc, Id, Obj, Op, SubPath, Vec2 } from '../types';
 import { activeSheet } from '../doc';
 import { bboxOfSubPaths, boxUnion, flattenSubPaths, transformSubPaths } from '../geom/path';
 import { bulgeFromSweep } from '../geom/arc';
+import { compensateKerf } from '../geom/kerf';
 
 export type DxfVersion = 'R2000' | 'R12';
 
@@ -18,6 +19,11 @@ export interface DxfExportOptions {
    * в американских Cam/CAD без ручной правки масштаба.
    */
   units?: 'mm' | 'inch';
+  /**
+   * Компенсация реза, мм: контуры слоя CUT раздуваются на kerf/2, чтобы
+   * после лазера деталь совпала с чертежом. 0 или не задано — без изменений.
+   */
+  kerf?: number;
 }
 
 /** Во сколько раз масштабировать координаты при выгрузке. */
@@ -177,6 +183,7 @@ export function exportDxf(doc: Doc, opts: DxfExportOptions = {}): string {
   const units = opts.units ?? 'mm';
   const k = unitScale(units);
   const only = opts.onlyIds ? new Set(opts.onlyIds) : null;
+  const kerf = Math.max(0, opts.kerf ?? 0);
 
   const objs = doc.order
     .map((id) => doc.objects[id])
@@ -184,7 +191,11 @@ export function exportDxf(doc: Doc, opts: DxfExportOptions = {}): string {
 
   // геометрия по слоям
   const layerOf = new Map<Id, string>();
-  for (const l of doc.layers) layerOf.set(l.id, LAYER_OF_OP[l.op].name);
+  const opOf = new Map<Id, Op>();
+  for (const l of doc.layers) {
+    layerOf.set(l.id, LAYER_OF_OP[l.op].name);
+    opOf.set(l.id, l.op);
+  }
 
   let extent: Box | null = null;
   for (const obj of objs) {
@@ -241,9 +252,16 @@ export function exportDxf(doc: Doc, opts: DxfExportOptions = {}): string {
   // ENTITIES
   w.add(0, 'SECTION'); w.add(2, 'ENTITIES');
 
+  const cutOps = new Set<Op>(['cut']);
   const draw = (obj: Obj): void => {
     const layer = layerOf.get(obj.layerId) ?? 'CUT';
     const world = transformSubPaths(obj.path, worldMatrix(obj, k));
+    // рез компенсируется в мировых координатах: в дюймовом файле kerf тоже в дюймах
+    if (kerf > 0 && cutOps.has(opOf.get(obj.layerId) ?? 'cut')) {
+      const geo = compensateKerf(world, kerf * k);
+      for (const sp of geo) writePolyline(w, layer, subPathToVertices(sp, tol), sp.closed);
+      return;
+    }
     for (const sp of world) {
       const circle = asCircle(sp);
       if (circle) { writeCircle(w, layer, circle.center, circle.r); continue; }

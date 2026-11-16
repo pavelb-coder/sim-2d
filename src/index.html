@@ -152,6 +152,23 @@
       <p class="phint">Тяните узел или сегмент мышью · Shift+клик — несколько узлов · рамка выделяет узлы · двойной клик по контуру добавляет узел · стрелки сдвигают узлы · квадрат — угловой узел, круг — гладкий, ромб — симметричный</p>
     </section>
 
+    <section class="pblock" data-panel="material">
+      <h2>Материал и рез</h2>
+      <div class="field-row">
+        <label for="mat-preset">Материал</label>
+        <select id="mat-preset"></select>
+      </div>
+      <div class="field-pair">
+        <div class="field"><label for="mat-thickness">Толщина, мм</label><input type="number" id="mat-thickness" step="0.5" min="0.2" max="50" value="3"></div>
+        <div class="field"><label for="mat-kerf">Рез, мм</label><input type="number" id="mat-kerf" step="0.01" min="0" max="2" value="0.12"></div>
+      </div>
+      <label class="check"><input type="checkbox" id="mat-compensate"> Учитывать рез при экспорте DXF</label>
+      <button class="ghost-btn wide" id="mat-apply">Учесть рез в контурах</button>
+      <p class="phint" id="mat-hint">Лазер вырезает канавку шириной «рез»: деталь выходит меньше чертежа на половину реза
+      с каждого края, а отверстия — больше. «Учесть рез в контурах» раздувает контуры слоя реза на эту величину;
+      гравировка и разметка не меняются.</p>
+    </section>
+
     <section class="pblock" data-panel="ops">
       <h2>Операции</h2>
       <div class="btn-grid">

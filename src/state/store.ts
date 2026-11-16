@@ -1,8 +1,9 @@
-import type { Doc, Id, Layer, Obj, Sheet, Style } from '../core/types';
+import type { Doc, Id, Layer, Material, Obj, Sheet, Style } from '../core/types';
 import { activeSheet, createDoc, emptyStyle } from '../core/doc';
 import { History, applyPatches, updateCmd, type Command, type Patch } from './history';
 import { invalidateSnapCache } from '../core/snap';
 import type { View } from '../render/view';
+import { materialOf } from '../core/geom/kerf';
 
 export type ToolId = 'select' | 'line' | 'rect' | 'ellipse' | 'polygon' | 'star' | 'node' | 'text';
 export type ChangeKind = 'doc' | 'selection' | 'view' | 'tool' | 'ui';
@@ -126,6 +127,23 @@ export class Store {
   updateSheet(patch: Partial<Sheet>): void {
     const sheet = { ...this.state.sheet, ...patch };
     const doc: Doc = { ...this.state.doc, sheets: this.state.doc.sheets.map((s) => (s.id === sheet.id ? sheet : s)) };
+    this.setDoc(doc);
+    this.emit('doc');
+  }
+
+  /**
+   * Настройки материала и компенсации реза. Это параметры документа, а не
+   * геометрия: в историю не пишутся — как и размер листа.
+   */
+  updateMaterial(patch: Partial<Material>): void {
+    const cur = materialOf(this.state.doc);
+    const next: Material = {
+      ...cur,
+      ...patch,
+      thickness: Math.max(0.2, Math.min(50, patch.thickness ?? cur.thickness)),
+      kerf: Math.max(0, Math.min(2, patch.kerf ?? cur.kerf)),
+    };
+    const doc: Doc = { ...this.state.doc, material: next };
     this.setDoc(doc);
     this.emit('doc');
   }

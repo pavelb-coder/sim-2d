@@ -449,6 +449,52 @@ test('svg: дуга A превращается в кубические, а не 
   near(box.h, 10, 0.05, );
 });
 
+test('экспорт DXF: компенсация реза только на слое реза', () => {
+  const doc = createDoc();
+  const sheet = doc.sheets[0];
+  const cut = makeObj({ sheetId: sheet.id, layerId: doc.layers[0].id, path: rectPath(100, 60), transform: { ...IDENT } , style: emptyStyle(doc.layers[0]) });
+  const eng = makeObj({ sheetId: sheet.id, layerId: doc.layers[1].id, path: rectPath(40, 10), transform: { ...IDENT }, style: emptyStyle(doc.layers[1]) });
+  doc.objects[cut.id] = cut; doc.objects[eng.id] = eng; doc.order = [cut.id, eng.id];
+  assert.equal(doc.layers[0].op, 'cut');
+  assert.equal(doc.layers[1].op, 'engrave');
+
+  const pairs = (text: string): [string, string][] => {
+    const lines = text.split(/\r?\n/);
+    const out: [string, string][] = [];
+    for (let i = 0; i + 1 < lines.length; i += 2) out.push([lines[i].trim(), lines[i + 1].trim()]);
+    return out;
+  };
+  const bbox = (text: string): { w: number; h: number } => {
+    const p = pairs(text);
+    const xs = p.filter(([c]) => c === '10').map(([, v]) => Number(v));
+    const ys = p.filter(([c]) => c === '20').map(([, v]) => Number(v));
+    return { w: Math.max(...xs) - Math.min(...xs), h: Math.max(...ys) - Math.min(...ys) };
+  };
+
+  // без компенсации — контур ровно по чертежу
+  const plain = bbox(exportDxf(doc, { onlyIds: [cut.id] }));
+  near(plain.w, 100, 1e-6);
+  near(plain.h, 60, 1e-6);
+
+  // рез 0,2 мм → по 0,1 мм на каждую сторону
+  const comp = bbox(exportDxf(doc, { onlyIds: [cut.id], kerf: 0.2 }));
+  near(comp.w, 100.2, 0.02);
+  near(comp.h, 60.2, 0.02);
+
+  // гравировка не компенсируется: рез её не касается
+  const engraveComp = bbox(exportDxf(doc, { onlyIds: [eng.id], kerf: 0.2 }));
+  near(engraveComp.w, 40, 1e-6);
+  near(engraveComp.h, 10, 1e-6);
+
+  // дюймовый файл: kerf тоже переводится в дюймы
+  const inch = bbox(exportDxf(doc, { onlyIds: [cut.id], kerf: 0.2, units: 'inch' }));
+  near(inch.w, (100 + 0.2) / 25.4, 0.002);
+
+  // нулевой/отрицательный рез ничего не меняет
+  const zero = bbox(exportDxf(doc, { onlyIds: [cut.id], kerf: 0 }));
+  near(zero.w, 100, 1e-6);
+});
+
 test('svg: экспорт и повторный импорт совпадают по bbox', () => {
   const doc = sampleDoc();
   const text = exportSvg(doc);

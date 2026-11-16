@@ -1,6 +1,7 @@
 import type { Doc, Id, Layer, Obj, Op, Sheet, Style } from './types';
 import { uid } from './shape';
 import { IDENT } from './geom/transform';
+import { defaultMaterial } from './geom/kerf';
 
 export const SHEET_PRESETS: { label: string; w: number; h: number }[] = [
   { label: 'A4', w: 297, h: 210 },
@@ -36,6 +37,7 @@ export function createDoc(): Doc {
     layers: [cut, engrave],
     objects: {},
     order: [],
+    material: defaultMaterial(),
     meta: { name: 'Без имени', createdAt: new Date().toISOString(), app: 'lasercut-studio' },
   };
 }

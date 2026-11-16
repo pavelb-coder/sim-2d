@@ -579,6 +579,14 @@ window.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') (e.target as HTMLElement).blur();
     return;
   }
+  // Подсказка перетаскивания обещает «Esc — отмена»: закрываем её первой.
+  if (e.key === 'Escape' && !dropZone.hidden) {
+    dragDepth = 0;
+    showDropZone(false);
+    e.preventDefault();
+    return;
+  }
+
   const mod = e.ctrlKey || e.metaKey;
   const key = e.key.toLowerCase();
 

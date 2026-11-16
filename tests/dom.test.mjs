@@ -261,6 +261,19 @@ const dropEv = dndEvent('drop', { files: [droppedFile] });
 window.dispatchEvent(dropEv);
 await new Promise((r) => setTimeout(r, 60));
 ok(dropZone.hidden === true, 'после drop подсказка скрыта');
+
+// Регрессия «синий экран не уходит»: браузерное [hidden]{display:none} проигрывает
+// авторскому .drop-zone{display:grid}, поэтому в CSS обязано быть правило с !important,
+// иначе подсказка висит поверх листа постоянно, хотя атрибут hidden выставлен.
+const cssText = [...window.document.querySelectorAll('style')].map((s) => s.textContent).join('\n');
+ok(/\[hidden\]\s*\{\s*display:\s*none\s*!important/.test(cssText), 'CSS: [hidden] перекрывает display классов');
+ok(!/\.drop-zone\s*\{[^}]*\}/.test(cssText) || /\[hidden\]\s*\{\s*display:\s*none\s*!important/.test(cssText),
+  'подсказка не может остаться видимой из-за display: grid');
+
+window.dispatchEvent(dndEvent('dragenter'));
+ok(dropZone.hidden === false, 'перед проверкой Esc подсказка снова показана');
+window.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+ok(dropZone.hidden === true, 'Esc закрывает подсказку перетаскивания');
 ok(num() === beforeDrop + 1, `файл из drop загружен (${beforeDrop} → ${num()})`);
 
 console.log('экспорт (без скачивания)');

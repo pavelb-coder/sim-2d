@@ -10,6 +10,8 @@ import { booleanPaths, offsetPaths, pathsArea, unionPaths } from '../src/core/ge
 import { validateDoc } from '../src/core/validate';
 import { pathNodes, moveNode, deleteNode, splitSegment, toggleClosed, toCurve } from '../src/core/geom/nodeEdit';
 import { setFontData, ensureFont, textToPaths } from '../src/core/text';
+import { textOnPath } from '../src/core/textPath';
+import { angleOf, fillTypeOf, gradientLine, gradientRadius, secondColorOf } from '../src/core/fill';
 import { nestObjects } from '../src/core/nest';
 import { createDoc, emptyStyle } from '../src/core/doc';
 import { ellipsePath, makeObj, rectPath } from '../src/core/shape';
@@ -566,6 +568,54 @@ atest('текст: шрифт загружается и даёт контуры'
   near(box.y, 0, 1e-6);
   assert.ok(box.h >= 10 && box.h <= 14, `высота заглавных ≈ 10 мм, получено ${box.h}`);
   assert.ok(res!.width > 30, 'ширина посчитана');
+});
+
+atest('текст по контуру: буквы идут по дуге и поворачиваются по касательной', async () => {
+  const ttf = readFileSync(new URL('../assets/fonts/DejaVuSans-subset.ttf', import.meta.url));
+  setFontData(ttf.toString('base64'));
+  assert.ok(await ensureFont());
+
+  // базовый контур — окружность радиуса 50 мм
+  const circle = [{ closed: true, start: { x: 50, y: 0 }, segs: [
+    { t: 'a' as const, a: { x: 50, y: 0 }, b: { x: -50, y: 0 }, center: { x: 0, y: 0 }, r: 50, a0: 0, sweep: Math.PI },
+    { t: 'a' as const, a: { x: -50, y: 0 }, b: { x: 50, y: 0 }, center: { x: 0, y: 0 }, r: 50, a0: Math.PI, sweep: Math.PI },
+  ] }];
+  const res = textOnPath('ДУГА', 10, circle, { align: 'center' });
+  assert.ok(res, 'текст по контуру построен');
+  assert.ok(res!.paths.length >= 4, `контуров букв: ${res!.paths.length}`);
+  assert.ok(Math.abs(res!.lengthMm - Math.PI * 100) < 0.5, `длина контура ≈ 314 мм, получено ${res!.lengthMm.toFixed(1)}`);
+  assert.ok(res!.fit, 'надпись короче контура');
+
+  // все буквы лежат в кольце вокруг центра (радиус 50 ± высота буквы)
+  for (const sp of res!.paths) {
+    const r = Math.hypot(sp.start.x, sp.start.y);
+    assert.ok(r > 35 && r < 65, `буква на дуге (r=${r.toFixed(1)})`);
+  }
+
+  // без контура и без текста — null
+  assert.equal(textOnPath('', 10, circle), null);
+  assert.equal(textOnPath('Х', 10, []), null);
+});
+
+test('заливка: типы, угол и осевая линия градиента', () => {
+  const solid = { fill: '#ff0000', stroke: '#000000', strokeWidth: 0.1, opacity: 1 };
+  assert.equal(fillTypeOf(solid), 'solid');
+  assert.equal(fillTypeOf({ ...solid, fill: null }), null);
+  assert.equal(secondColorOf({ ...solid, fillType: 'linear' }), '#ffffff');
+  assert.equal(angleOf({ ...solid, fillType: 'linear', fillAngle: 45 }), 45);
+
+  const box = { x: 0, y: 0, w: 100, h: 40 };
+  const line = gradientLine(box, 0);
+  near(line.x0, 0, 1e-9);
+  near(line.x1, 100, 1e-9);
+  near(line.y0, 20, 1e-9);
+
+  const vertical = gradientLine(box, 90);
+  near(vertical.y0, 0, 1e-9);
+  near(vertical.y1, 40, 1e-9);
+  near(vertical.x0, 50, 1e-9);
+
+  near(gradientRadius(box), Math.hypot(100, 40) / 2, 1e-9);
 });
 
 test('трансформации: масштаб и поворот в матрице', () => {

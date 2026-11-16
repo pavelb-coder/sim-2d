@@ -4,7 +4,7 @@ import { History, applyPatches, updateCmd, type Command, type Patch } from './hi
 import { invalidateSnapCache } from '../core/snap';
 import type { View } from '../render/view';
 
-export type ToolId = 'select' | 'line' | 'rect' | 'ellipse' | 'node' | 'text';
+export type ToolId = 'select' | 'line' | 'rect' | 'ellipse' | 'polygon' | 'star' | 'node' | 'text';
 export type ChangeKind = 'doc' | 'selection' | 'view' | 'tool' | 'ui';
 
 export interface AppState {
@@ -19,6 +19,11 @@ export interface AppState {
   alignRef: 'sheet' | 'selection';
   /** умное выравнивание при перетаскивании (Dynamic guides) */
   smartGuides: boolean;
+  /** параметры инструментов «многоугольник» и «звезда» */
+  polySides: number;
+  starPoints: number;
+  /** доля внутреннего радиуса звезды (0,05…0,95) */
+  starInner: number;
 }
 
 type Listener = (state: AppState, kind: ChangeKind) => void;
@@ -41,6 +46,9 @@ export class Store {
       activeLayerId: doc.layers[0].id,
       alignRef: 'selection',
       smartGuides: true,
+      polySides: 6,
+      starPoints: 5,
+      starInner: 0.45,
     };
   }
 
@@ -137,6 +145,16 @@ export class Store {
 
   styleFor(layer: Layer): Style {
     return emptyStyle(layer);
+  }
+
+  /** Параметры правильных фигур (число сторон/лучей, глубина звезды). */
+  setShapeParams(p: Partial<{ polySides: number; starPoints: number; starInner: number }>): void {
+    const next: AppState = { ...this.state };
+    if (p.polySides !== undefined) next.polySides = Math.max(3, Math.min(64, Math.round(p.polySides)));
+    if (p.starPoints !== undefined) next.starPoints = Math.max(3, Math.min(32, Math.round(p.starPoints)));
+    if (p.starInner !== undefined) next.starInner = Math.max(0.05, Math.min(0.95, p.starInner));
+    this.state = next;
+    this.emit('ui');
   }
 
   setSmartGuides(on: boolean): void {

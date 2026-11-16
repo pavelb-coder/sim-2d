@@ -1,8 +1,9 @@
-import type { Box, Doc, Id, Sheet, Vec2 } from '../core/types';
+import type { Box, Doc, Id, Sheet } from '../core/types';
 import { bboxOfSubPaths, boxUnion, worldBBox } from '../core/geom/path';
 import type { SnapResult } from '../core/snap';
 import type { AlignLine } from '../core/smart';
 import { theme } from './theme';
+import { HANDLE_SIZE, handlePoints } from './handles';
 import { View } from './view';
 import { drawObject } from './scene';
 
@@ -17,8 +18,6 @@ export interface OverlayInput {
   align: AlignLine[];
   drawExtra: ((ctx: CanvasRenderingContext2D, view: View, dpr: number) => void) | null;
 }
-
-const HANDLE = 7;
 
 export function renderOverlay(ctx: CanvasRenderingContext2D, input: OverlayInput): void {
   const { doc, view, dpr, selection } = input;
@@ -41,7 +40,7 @@ export function renderOverlay(ctx: CanvasRenderingContext2D, input: OverlayInput
       if (!obj) continue;
       box = boxUnion(box, worldBBox(obj.path, obj.transform));
     }
-    if (box) drawBBox(ctx, box, view, dpr, selection.length === 1);
+    if (box) drawBBox(ctx, box, view, dpr);
   }
 
   // рамка выделения
@@ -70,7 +69,7 @@ export function renderOverlay(ctx: CanvasRenderingContext2D, input: OverlayInput
   if (input.drawExtra) input.drawExtra(ctx, view, dpr);
 }
 
-function drawBBox(ctx: CanvasRenderingContext2D, box: Box, view: View, dpr: number, withHandles: boolean): void {
+function drawBBox(ctx: CanvasRenderingContext2D, box: Box, view: View, dpr: number): void {
   const a = view.toScreen({ x: box.x, y: box.y });
   const b = view.toScreen({ x: box.x + box.w, y: box.y + box.h });
   const x = Math.min(a.x, b.x), y = Math.min(a.y, b.y);
@@ -83,19 +82,33 @@ function drawBBox(ctx: CanvasRenderingContext2D, box: Box, view: View, dpr: numb
   ctx.strokeRect(Math.round(x) + 0.5, Math.round(y) + 0.5, Math.round(w), Math.round(h));
   ctx.setLineDash([]);
 
-  if (!withHandles) return;
-  const pts: Vec2[] = [
-    { x, y }, { x: x + w / 2, y }, { x: x + w, y },
-    { x, y: y + h / 2 }, { x: x + w, y: y + h / 2 },
-    { x, y: y + h }, { x: x + w / 2, y: y + h }, { x: x + w, y: y + h },
-  ];
+  // Все ручки живые: 8 по рамке (масштаб) и одна над верхней гранью (поворот).
+  const points = handlePoints(box, view);
+  const rot = points.find((p) => p.id === 'rotate');
+  if (rot) {
+    ctx.strokeStyle = theme.accentLine;
+    ctx.beginPath();
+    ctx.moveTo(points.find((p) => p.id === 'n')?.screen.x ?? x + w / 2, y);
+    ctx.lineTo(rot.screen.x, rot.screen.y + HANDLE_SIZE / 2);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(rot.screen.x, rot.screen.y, HANDLE_SIZE / 2 + 0.5, 0, Math.PI * 2);
+    ctx.fillStyle = theme.handleFill;
+    ctx.fill();
+    ctx.strokeStyle = theme.handleStroke;
+    ctx.lineWidth = 1.4;
+    ctx.stroke();
+  }
+
   ctx.fillStyle = theme.handleFill;
   ctx.strokeStyle = theme.handleStroke;
   ctx.lineWidth = 1.4;
-  for (const p of pts) {
+  for (const p of points) {
+    if (p.id === 'rotate') continue;
+    const hx = p.screen.x - HANDLE_SIZE / 2, hy = p.screen.y - HANDLE_SIZE / 2;
     ctx.beginPath();
-    if (typeof ctx.roundRect === 'function') ctx.roundRect(p.x - HANDLE / 2, p.y - HANDLE / 2, HANDLE, HANDLE, 1.5);
-    else ctx.rect(p.x - HANDLE / 2, p.y - HANDLE / 2, HANDLE, HANDLE);
+    if (typeof ctx.roundRect === 'function') ctx.roundRect(hx, hy, HANDLE_SIZE, HANDLE_SIZE, 1.5);
+    else ctx.rect(hx, hy, HANDLE_SIZE, HANDLE_SIZE);
     ctx.fill();
     ctx.stroke();
   }
@@ -103,10 +116,11 @@ function drawBBox(ctx: CanvasRenderingContext2D, box: Box, view: View, dpr: numb
 
 function drawAlign(ctx: CanvasRenderingContext2D, lines: AlignLine[], view: View, dpr: number): void {
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  ctx.strokeStyle = theme.align;
   ctx.lineWidth = 1;
-  ctx.setLineDash([5, 4]);
   for (const line of lines) {
+    const gap = line.kind === 'gap';
+    ctx.strokeStyle = gap ? theme.spacing : theme.align;
+    ctx.setLineDash(gap ? [] : [5, 4]);
     ctx.beginPath();
     if (line.axis === 'x') {
       const a = view.toScreen({ x: line.at, y: line.from });
@@ -120,6 +134,25 @@ function drawAlign(ctx: CanvasRenderingContext2D, lines: AlignLine[], view: View
       ctx.lineTo(b.x, Math.round(b.y) + 0.5);
     }
     ctx.stroke();
+    // засечки на концах «интервала» — видно, между чем измерено расстояние
+    if (gap) {
+      const tick = 6;
+      const a = line.axis === 'x'
+        ? view.toScreen({ x: line.at, y: line.from })
+        : view.toScreen({ x: line.from, y: line.at });
+      const b = line.axis === 'x'
+        ? view.toScreen({ x: line.at, y: line.to })
+        : view.toScreen({ x: line.to, y: line.at });
+      ctx.beginPath();
+      if (line.axis === 'x') {
+        ctx.moveTo(a.x - tick / 2, a.y); ctx.lineTo(a.x + tick / 2, a.y);
+        ctx.moveTo(b.x - tick / 2, b.y); ctx.lineTo(b.x + tick / 2, b.y);
+      } else {
+        ctx.moveTo(a.x, a.y - tick / 2); ctx.lineTo(a.x, a.y + tick / 2);
+        ctx.moveTo(b.x, b.y - tick / 2); ctx.lineTo(b.x, b.y + tick / 2);
+      }
+      ctx.stroke();
+    }
   }
   ctx.setLineDash([]);
 }

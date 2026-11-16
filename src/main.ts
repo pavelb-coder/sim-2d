@@ -6,7 +6,7 @@ import { emptyStyle } from './core/doc';
 import { makeObj, uid } from './core/shape';
 import { IDENT } from './core/geom/transform';
 import { bboxOfSubPaths, boxUnion, pathLength, transformSubPaths } from './core/geom/path';
-import { pathNodes } from './core/geom/nodeEdit';
+import { nodeHandles, nodePoint, pathNodes } from './core/geom/nodeEdit';
 import { pickObject } from './core/geom/hit';
 import { findSnap, type SnapResult } from './core/snap';
 import { validateDoc, type Issue } from './core/validate';
@@ -19,7 +19,7 @@ import { exportSvg } from './core/svg/write';
 import { Store } from './state/store';
 import { updateCmd } from './state/history';
 import { duplicate, nudge } from './state/edits';
-import { alignSelection, applyBoolean, applyCorners, applyOffset, distributeSelection, duplicatePattern, groupSelection, nestSelection, reorderOne, reorderSelection, setObjectFlag, transformSelection, ungroupSelection } from './state/ops';
+import { alignSelection, applyBoolean, applyCorners, applyOffset, applyTextOnPath, distributeSelection, duplicatePattern, groupSelection, nestSelection, reorderOne, reorderSelection, setObjectFlag, transformSelection, ungroupSelection } from './state/ops';
 
 import { View } from './render/view';
 import { renderScene } from './render/scene';
@@ -28,7 +28,7 @@ import { theme } from './render/theme';
 
 import { createTools } from './tools';
 import { emptyOverlay, type ToolCtx } from './tools/tool';
-import { nodeToolState, nodeOpBreak, nodeOpClose, nodeOpCurve, nodeOpDelete, nodeOpLine } from './tools/node';
+import { nodeToolState, nodeOpBreak, nodeOpClose, nodeOpCurve, nodeOpDelete, nodeOpLine, nodeOpType } from './tools/node';
 import { setTextHeight } from './tools/text';
 
 import { initUI, setAutosaveStatus, setIssues, setStats } from './ui/panels';
@@ -86,20 +86,78 @@ function drawNodes(ctx: CanvasRenderingContext2D): void {
   const objs = store.selected();
   if (!objs.length) return;
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const isSel = (ref: { sub: number; index: number }): boolean =>
+    nodeToolState.selected.some((r) => r.sub === ref.sub && r.index === ref.index);
+  const isActive = (ref: { sub: number; index: number }): boolean =>
+    !!nodeToolState.active && nodeToolState.active.sub === ref.sub && nodeToolState.active.index === ref.index;
+
   for (const obj of objs) {
-    for (const node of pathNodes(obj.path)) {
-      const world = { x: obj.transform.a * node.p.x + obj.transform.c * node.p.y + obj.transform.e, y: obj.transform.b * node.p.x + obj.transform.d * node.p.y + obj.transform.f };
-      const s = view.toScreen(world);
-      const active = nodeToolState.active && nodeToolState.active.sub === node.ref.sub && nodeToolState.active.index === node.ref.index && nodeToolState.objectId === obj.id;
-      const size = active ? 8 : 6;
+    const toScreen = (p: Vec2): Vec2 => {
+      const w = {
+        x: obj.transform.a * p.x + obj.transform.c * p.y + obj.transform.e,
+        y: obj.transform.b * p.x + obj.transform.d * p.y + obj.transform.f,
+      };
+      return view.toScreen(w);
+    };
+
+    // ручки Безье активного узла — тянем мышью, как в CorelDRAW
+    if (nodeToolState.objectId === obj.id && nodeToolState.active) {
+      const node = nodePoint(obj.path, nodeToolState.active);
+      const nodeScreen = node ? toScreen(node) : null;
+      for (const h of nodeHandles(obj.path, nodeToolState.active)) {
+        const hs = toScreen(h.p);
+        ctx.strokeStyle = theme.accentLine;
+        ctx.lineWidth = 1;
+        if (nodeScreen) {
+          ctx.beginPath();
+          ctx.moveTo(nodeScreen.x, nodeScreen.y);
+          ctx.lineTo(hs.x, hs.y);
+          ctx.stroke();
+        }
+        ctx.beginPath();
+        ctx.arc(hs.x, hs.y, 3.5, 0, Math.PI * 2);
+        ctx.fillStyle = theme.handleFill;
+        ctx.fill();
+        ctx.strokeStyle = theme.handleStroke;
+        ctx.lineWidth = 1.3;
+        ctx.stroke();
+      }
+    }
+
+    for (const n of pathNodes(obj.path)) {
+      const s = toScreen(n.p);
+      const active = nodeToolState.objectId === obj.id && isActive(n.ref);
+      const selected = nodeToolState.objectId === obj.id && isSel(n.ref);
+      const size = active ? 8.5 : selected ? 7.5 : 6;
       ctx.beginPath();
       ctx.rect(s.x - size / 2, s.y - size / 2, size, size);
-      ctx.fillStyle = active ? theme.accent : '#ffffff';
+      ctx.fillStyle = active ? theme.accent : selected ? theme.accentSoft : '#ffffff';
       ctx.strokeStyle = theme.handleStroke;
       ctx.lineWidth = 1.4;
       ctx.fill();
       ctx.stroke();
     }
+  }
+
+  // рамка выделения узлов
+  const mb = nodeToolState.marquee;
+  const obj = nodeToolState.objectId ? store.state.doc.objects[nodeToolState.objectId] : null;
+  if (mb && obj) {
+    const a = view.toScreen({
+      x: obj.transform.a * mb.x + obj.transform.c * mb.y + obj.transform.e,
+      y: obj.transform.b * mb.x + obj.transform.d * mb.y + obj.transform.f,
+    });
+    const b = view.toScreen({
+      x: obj.transform.a * (mb.x + mb.w) + obj.transform.c * (mb.y + mb.h) + obj.transform.e,
+      y: obj.transform.b * (mb.x + mb.w) + obj.transform.d * (mb.y + mb.h) + obj.transform.f,
+    });
+    ctx.fillStyle = theme.accentSoft;
+    ctx.fillRect(Math.min(a.x, b.x), Math.min(a.y, b.y), Math.abs(b.x - a.x), Math.abs(b.y - a.y));
+    ctx.strokeStyle = theme.accent;
+    ctx.lineWidth = 1;
+    ctx.setLineDash([4, 3]);
+    ctx.strokeRect(Math.min(a.x, b.x) + 0.5, Math.min(a.y, b.y) + 0.5, Math.abs(b.x - a.x), Math.abs(b.y - a.y));
+    ctx.setLineDash([]);
   }
 }
 
@@ -613,6 +671,8 @@ window.addEventListener('keydown', (e) => {
     case 'l': actions.setTool('line'); return;
     case 'r': actions.setTool('rect'); return;
     case 'e': actions.setTool('ellipse'); return;
+    case 'p': actions.setTool('polygon'); return;
+    case 's': actions.setTool('star'); return;
     case 't': actions.setTool('text'); return;
     case 'delete':
     case 'backspace':
@@ -655,6 +715,9 @@ function nodeToolOp(op: NodeOp): void {
     close: nodeOpClose,
     break: nodeOpBreak,
     delete: nodeOpDelete,
+    smooth: (c) => nodeOpType(c, 'smooth'),
+    symmetric: (c) => nodeOpType(c, 'symmetric'),
+    corner: (c) => nodeOpType(c, 'corner'),
   };
   map[op](toolCtx);
 }
@@ -709,6 +772,18 @@ const actions = {
   },
   setSmartGuides(on: boolean): void {
     store.setSmartGuides(on);
+  },
+  setShapeParams(p: { polySides?: number; starPoints?: number; starInner?: number }): void {
+    store.setShapeParams(p);
+  },
+  textOnPath(text: string, height: number, offset: number, align: 'start' | 'center' | 'end'): void {
+    void (async () => {
+      const ok = await ensureFont();
+      if (!ok) { toast('Шрифт не загрузился — текст по контуру недоступен'); return; }
+      const err = applyTextOnPath(store, text, height, offset, align);
+      if (err) toast(err);
+      requestRender('both');
+    })();
   },
   setObjectFlag(id: string, flag: 'hidden' | 'locked', value: boolean): void {
     setObjectFlag(store, id, flag, value);

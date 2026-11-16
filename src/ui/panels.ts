@@ -9,7 +9,7 @@ import type { Issue } from '../core/validate';
 import type { Obj, Op } from '../core/types';
 
 export type ExportKind = 'dxf' | 'dxf12' | 'svg' | 'png' | 'project';
-export type NodeOp = 'curve' | 'line' | 'close' | 'break' | 'delete';
+export type NodeOp = 'curve' | 'line' | 'close' | 'break' | 'delete' | 'smooth' | 'symmetric' | 'corner';
 
 export interface UIActions {
   undo(): void;
@@ -34,11 +34,14 @@ export interface UIActions {
   ungroup(): void;
   reorder(dir: 'front' | 'back'): void;
   nodeOp(op: NodeOp): void;
+  /** текст по контуру выделенного объекта */
+  textOnPath(text: string, height: number, offset: number, align: 'start' | 'center' | 'end'): void;
   setTextHeight(mm: number): void;
   transform(kind: 'rot90' | 'rot-90' | 'mirrorH' | 'mirrorV'): void;
   nest(all: boolean, opts: { gap: number; margin: number; allowRotate: boolean }): void;
   corners(mode: 'fillet' | 'chamfer', size: number): void;
   setSmartGuides(on: boolean): void;
+  setShapeParams(p: { polySides?: number; starPoints?: number; starInner?: number }): void;
   setObjectFlag(id: string, flag: 'hidden' | 'locked', value: boolean): void;
   reorderOne(id: string, dir: 'up' | 'down'): void;
   toast(text: string): void;
@@ -118,6 +121,11 @@ export function initUI(store: Store, actions: UIActions): void {
   $<HTMLInputElement>('chk-snap-obj').addEventListener('change', (e) => store.updateSheet({ snapObjects: (e.target as HTMLInputElement).checked }));
   $<HTMLInputElement>('chk-smart').addEventListener('change', (e) => actions.setSmartGuides((e.target as HTMLInputElement).checked));
 
+  /* ---------- фигуры: многоугольник и звезда ---------- */
+  $<HTMLInputElement>('poly-sides').addEventListener('input', () => actions.setShapeParams({ polySides: val('poly-sides') }));
+  $<HTMLInputElement>('star-points').addEventListener('input', () => actions.setShapeParams({ starPoints: val('star-points') }));
+  $<HTMLInputElement>('star-inner').addEventListener('input', () => actions.setShapeParams({ starInner: val('star-inner') / 100 }));
+
   /* ---------- свойства ---------- */
   const applyGeometry = (): void => {
     const objs = store.selected();
@@ -168,6 +176,9 @@ export function initUI(store: Store, actions: UIActions): void {
   bind('node-close', () => actions.nodeOp('close'));
   bind('node-break', () => actions.nodeOp('break'));
   bind('node-delete', () => actions.nodeOp('delete'));
+  bind('node-smooth', () => actions.nodeOp('smooth'));
+  bind('node-symmetric', () => actions.nodeOp('symmetric'));
+  bind('node-corner', () => actions.nodeOp('corner'));
 
   /* ---------- поворот и зеркало ---------- */
   $('tr-rot90').addEventListener('click', () => actions.transform('rot90'));
@@ -200,16 +211,39 @@ export function initUI(store: Store, actions: UIActions): void {
   };
   $('stroke-color').addEventListener('input', (e) => applyStyle({ stroke: (e.target as HTMLInputElement).value }));
   $('stroke-width').addEventListener('change', () => applyStyle({ strokeWidth: Math.max(0, val('stroke-width')) }));
+  const syncFillRows = (): void => {
+    const on = $<HTMLInputElement>('chk-fill').checked;
+    const type = $<HTMLSelectElement>('fill-type').value;
+    $('row-fill').hidden = !on;
+    $('row-fill-angle').hidden = !on || type !== 'linear';
+  };
   $<HTMLInputElement>('chk-fill').addEventListener('change', (e) => {
     const on = (e.target as HTMLInputElement).checked;
-    applyStyle({ fill: on ? $<HTMLInputElement>('fill-color').value : null });
-    $('row-fill').hidden = !on;
+    const type = $<HTMLSelectElement>('fill-type').value as 'solid' | 'linear' | 'radial';
+    applyStyle({ fill: on ? $<HTMLInputElement>('fill-color').value : null, fillType: type });
+    syncFillRows();
+  });
+  $<HTMLSelectElement>('fill-type').addEventListener('change', (e) => {
+    const type = (e.target as HTMLSelectElement).value as 'solid' | 'linear' | 'radial';
+    if ($<HTMLInputElement>('chk-fill').checked) applyStyle({ fillType: type });
+    syncFillRows();
   });
   $('fill-color').addEventListener('input', (e) => {
     if ($<HTMLInputElement>('chk-fill').checked) applyStyle({ fill: (e.target as HTMLInputElement).value });
   });
+  $('fill-color-2').addEventListener('input', (e) => {
+    if ($<HTMLInputElement>('chk-fill').checked) applyStyle({ fill2: (e.target as HTMLInputElement).value });
+  });
+  $('fill-angle').addEventListener('change', () => applyStyle({ fillAngle: val('fill-angle') }));
+  syncFillRows();
 
   $('text-height').addEventListener('change', () => actions.setTextHeight(val('text-height')));
+  bind('btn-text-path', () => actions.textOnPath(
+    $<HTMLInputElement>('top-text').value,
+    val('text-height'),
+    val('top-offset'),
+    $<HTMLSelectElement>('top-align').value as 'start' | 'center' | 'end',
+  ));
 
   /* ---------- синхронизация ---------- */
   function sync(state: AppState): void {

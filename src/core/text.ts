@@ -91,7 +91,7 @@ function capRatio(f: FontLike): number {
  * Текст → подпути в мм. `heightMm` — высота заглавных букв;
  * начало координат — левый нижний угол первой строки.
  */
-export function textToPaths(text: string, heightMm: number, opts: { lineHeight?: number } = {}): TextResult | null {
+export function textToPaths(text: string, heightMm: number, opts: { lineHeight?: number; raw?: boolean } = {}): TextResult | null {
   if (!font || !text.trim() || heightMm <= 0) return null;
   const size = heightMm / capRatio(font);
   const lineHeight = (opts.lineHeight ?? 1.25) * heightMm;
@@ -145,7 +145,12 @@ export function textToPaths(text: string, heightMm: number, opts: { lineHeight?:
   });
 
   if (!paths.length) return null;
-  return { paths: normalize(paths), width, height: heightMm + (lines.length - 1) * lineHeight };
+  // raw — для текста по контуру: нужны координаты от базовой линии и точная ширина
+  return {
+    paths: opts.raw ? paths : normalize(paths),
+    width,
+    height: heightMm + (lines.length - 1) * lineHeight,
+  };
 }
 
 function lastPoint(sub: SubPath): Vec2 {

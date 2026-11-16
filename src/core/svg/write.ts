@@ -1,6 +1,7 @@
 import type { Doc, Id, SubPath, Vec2 } from '../types';
 import { activeSheet } from '../doc';
-import { transformSubPaths } from '../geom/path';
+import { bboxOfSubPaths, transformSubPaths } from '../geom/path';
+import { angleOf, fillTypeOf, gradientLine, secondColorOf } from '../fill';
 
 export interface SvgExportOptions {
   sheetId?: Id;
@@ -34,6 +35,8 @@ export function exportSvg(doc: Doc, opts: SvgExportOptions = {}): string {
   const layerColor = new Map(doc.layers.map((l) => [l.id, l]));
 
   const body: string[] = [];
+  const defs: string[] = [];
+  let gradIndex = 0;
   for (const id of doc.order) {
     const obj = doc.objects[id];
     if (!obj || obj.sheetId !== sheetId || obj.hidden) continue;
@@ -43,7 +46,30 @@ export function exportSvg(doc: Doc, opts: SvgExportOptions = {}): string {
     const world: SubPath[] = transformSubPaths(obj.path, obj.transform);
     const d = world.map(subPathToD).filter(Boolean).join(' ');
     if (!d) continue;
-    const fill = obj.style.fill ?? 'none';
+    let fill = obj.style.fill ?? 'none';
+    const type = fillTypeOf(obj.style);
+    if (fill !== 'none' && type && type !== 'solid') {
+      // градиент — в мировых координатах объекта (путь уже в мире)
+      const box = bboxOfSubPaths(world);
+      gradIndex += 1;
+      const gid = `grad${gradIndex}`;
+      const second = secondColorOf(obj.style);
+      if (type === 'linear') {
+        const { x0, y0, x1, y1 } = gradientLine(box, angleOf(obj.style));
+        defs.push(
+          `    <linearGradient id="${gid}" gradientUnits="userSpaceOnUse" x1="${f(x0)}" y1="${f(y0)}" x2="${f(x1)}" y2="${f(y1)}">` +
+          `<stop offset="0" stop-color="${fill}"/><stop offset="1" stop-color="${second}"/></linearGradient>`,
+        );
+      } else {
+        const cx = box.x + box.w / 2, cy = box.y + box.h / 2;
+        const r = Math.max(Math.hypot(box.w, box.h) / 2, 1e-6);
+        defs.push(
+          `    <radialGradient id="${gid}" gradientUnits="userSpaceOnUse" cx="${f(cx)}" cy="${f(cy)}" r="${f(r)}">` +
+          `<stop offset="0" stop-color="${fill}"/><stop offset="1" stop-color="${second}"/></radialGradient>`,
+        );
+      }
+      fill = `url(#${gid})`;
+    }
     body.push(`  <path d="${d}" fill="${fill}" stroke="${stroke}" stroke-width="0.1" stroke-linejoin="round" stroke-linecap="round"/>`);
   }
 
@@ -54,6 +80,7 @@ export function exportSvg(doc: Doc, opts: SvgExportOptions = {}): string {
   return [
     '<?xml version="1.0" encoding="UTF-8"?>',
     `<svg xmlns="http://www.w3.org/2000/svg" width="${f(sheet.width)}mm" height="${f(sheet.height)}mm" viewBox="0 0 ${f(sheet.width)} ${f(sheet.height)}">`,
+    ...(defs.length ? ['  <defs>', ...defs, '  </defs>'] : []),
     `  <g transform="translate(0 ${f(sheet.height)}) scale(1 -1)">`,
     frame + body.join('\n'),
     '  </g>',

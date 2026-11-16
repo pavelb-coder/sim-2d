@@ -44,6 +44,12 @@ export interface Sheet {
 
 export interface Style {
   fill: string | null;
+  /** вид заливки: сплошная (по умолчанию), линейный или радиальный градиент */
+  fillType?: 'solid' | 'linear' | 'radial';
+  /** второй цвет градиента */
+  fill2?: string;
+  /** угол линейного градиента в градусах */
+  fillAngle?: number;
   stroke: string;
   strokeWidth: Mm;
   opacity: number;

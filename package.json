@@ -1,6 +1,6 @@
 {
   "name": "lasercut-studio",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "main": "index.js",
   "directories": {
     "test": "tests"
@@ -16,7 +16,8 @@
     "start": "node scripts/serve.mjs",
     "test:geom": "esbuild tests/geom.test.ts --bundle --platform=node --format=esm --outfile=tests/out.mjs --log-level=warning && node tests/out.mjs",
     "test:core": "esbuild tests/core.test.ts --bundle --platform=node --format=esm --outfile=tests/core.mjs --log-level=warning && node tests/core.mjs",
-    "test:all": "npm run typecheck && npm run test && npm run test:dom",
+    "test:all": "npm run typecheck && npm run test && npm run test:dom && npm run test:build",
+    "test:build": "node scripts/check-build-boot.mjs",
     "moodle:editor": "node scripts/moodle-sync-editor.mjs",
     "moodle:check": "node scripts/moodle-check.mjs",
     "moodle:smoke": "php -d max_input_vars=5000 scripts/moodle-smoke.php"

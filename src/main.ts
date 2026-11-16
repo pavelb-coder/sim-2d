@@ -6,7 +6,7 @@ import { emptyStyle } from './core/doc';
 import { makeObj, uid } from './core/shape';
 import { IDENT } from './core/geom/transform';
 import { bboxOfSubPaths, boxUnion, pathLength, transformSubPaths } from './core/geom/path';
-import { nodeHandles, nodePoint, pathNodes } from './core/geom/nodeEdit';
+import { nodeHandles, nodePoint, nodeTypeAt, pathNodes } from './core/geom/nodeEdit';
 import { pickObject } from './core/geom/hit';
 import { findSnap, type SnapResult } from './core/snap';
 import { validateDoc, type Issue } from './core/validate';
@@ -29,7 +29,7 @@ import { theme } from './render/theme';
 
 import { createTools } from './tools';
 import { emptyOverlay, type ToolCtx } from './tools/tool';
-import { nodeToolState, nodeOpBreak, nodeOpClose, nodeOpCurve, nodeOpDelete, nodeOpLine, nodeOpType } from './tools/node';
+import { nodeNudge, nodeOpAlign, nodeOpBreak, nodeOpClose, nodeOpCurve, nodeOpDelete, nodeOpJoin, nodeOpLine, nodeOpReverse, nodeOpSetPos, nodeOpType, nodeToolState } from './tools/node';
 import { setTextHeight } from './tools/text';
 
 import { initUI, setAutosaveStatus, setIssues, setStats } from './ui/panels';
@@ -126,13 +126,48 @@ function drawNodes(ctx: CanvasRenderingContext2D): void {
       }
     }
 
+    // выделенный сегмент — подсвечиваем, как в CorelDRAW
+    const seg = nodeToolState.objectId === obj.id ? nodeToolState.segment : null;
+    if (seg && obj.path[seg.sub]?.segs[seg.index]) {
+      const s0 = obj.path[seg.sub];
+      const sg = s0.segs[seg.index];
+      const a = toScreen(sg.a);
+      const b = toScreen(sg.b);
+      ctx.strokeStyle = theme.accent;
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      if (sg.t === 'l') {
+        ctx.moveTo(a.x, a.y);
+        ctx.lineTo(b.x, b.y);
+      } else if (sg.t === 'c') {
+        const c1 = toScreen(sg.c1);
+        const c2 = toScreen(sg.c2);
+        ctx.moveTo(a.x, a.y);
+        ctx.bezierCurveTo(c1.x, c1.y, c2.x, c2.y, b.x, b.y);
+      } else {
+        ctx.arc(toScreen(sg.center).x, toScreen(sg.center).y, sg.r * view.scale, 0, Math.PI * 2);
+      }
+      ctx.stroke();
+    }
+
     for (const n of pathNodes(obj.path)) {
       const s = toScreen(n.p);
       const active = nodeToolState.objectId === obj.id && isActive(n.ref);
       const selected = nodeToolState.objectId === obj.id && isSel(n.ref);
       const size = active ? 8.5 : selected ? 7.5 : 6;
+      const type = nodeTypeAt(obj.path, n.ref);
       ctx.beginPath();
-      ctx.rect(s.x - size / 2, s.y - size / 2, size, size);
+      if (type === 'smooth') {
+        ctx.arc(s.x, s.y, size / 2, 0, Math.PI * 2);
+      } else if (type === 'symmetric') {
+        ctx.moveTo(s.x, s.y - size / 2);
+        ctx.lineTo(s.x + size / 2, s.y);
+        ctx.lineTo(s.x, s.y + size / 2);
+        ctx.lineTo(s.x - size / 2, s.y);
+        ctx.closePath();
+      } else {
+        ctx.rect(s.x - size / 2, s.y - size / 2, size, size);
+      }
       ctx.fillStyle = active ? theme.accent : selected ? theme.accentSoft : '#ffffff';
       ctx.strokeStyle = theme.handleStroke;
       ctx.lineWidth = 1.4;
@@ -742,6 +777,10 @@ window.addEventListener('keydown', (e) => {
       const step = e.ctrlKey ? 0.1 : e.shiftKey ? 10 : 1;
       const dx = key === 'arrowleft' ? -step : key === 'arrowright' ? step : 0;
       const dy = key === 'arrowup' ? step : key === 'arrowdown' ? -step : 0;
+      if (store.state.tool === 'node' && (nodeToolState.selected.length || nodeToolState.active)) {
+        nodeNudge(toolCtx, dx, dy);
+        return;
+      }
       const objs = store.selected();
       if (objs.length) store.commit(updateCmd('Сдвиг', objs.map((o) => ({ before: o, after: nudge(o, dx, dy) }))));
       else { view.panBy(-dx * view.scale * 4, dy * view.scale * 4); requestRender('both'); }
@@ -765,6 +804,10 @@ function nodeToolOp(op: NodeOp): void {
     smooth: (c) => nodeOpType(c, 'smooth'),
     symmetric: (c) => nodeOpType(c, 'symmetric'),
     corner: (c) => nodeOpType(c, 'corner'),
+    'align-x': (c) => nodeOpAlign(c, 'x'),
+    'align-y': (c) => nodeOpAlign(c, 'y'),
+    join: nodeOpJoin,
+    reverse: nodeOpReverse,
   };
   map[op](toolCtx);
 }
@@ -811,6 +854,9 @@ const actions = {
       view.ty = view.height / 2 + issue.at.y * view.scale;
     }
     requestRender('both');
+  },
+  setNodePos(x: number, y: number): void {
+    nodeOpSetPos(toolCtx, x, y);
   },
   powerClip(): void {
     const err = applyPowerClip(store);
@@ -937,4 +983,6 @@ document.getElementById('file-input')?.addEventListener('change', (e) => {
   exportDxfWithOptions: () => exportDxfWithOptions(),
   // панели: состояние секций (пригодится и для отладки)
   panels: { init: initPanelCollapse, collapseAll, isCollapsed },
+  // редактор узлов: выделенные узлы/сегмент (для тестов и отладки)
+  node: nodeToolState,
 };

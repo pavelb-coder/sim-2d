@@ -10,7 +10,7 @@ import type { Issue } from '../core/validate';
 import type { Obj, Op } from '../core/types';
 
 export type ExportKind = 'dxf' | 'dxf12' | 'dxf-settings' | 'dxf-all' | 'svg' | 'png' | 'project';
-export type NodeOp = 'curve' | 'line' | 'close' | 'break' | 'delete' | 'smooth' | 'symmetric' | 'corner';
+export type NodeOp = 'curve' | 'line' | 'close' | 'break' | 'delete' | 'smooth' | 'symmetric' | 'corner' | 'align-x' | 'align-y' | 'join' | 'reverse';
 
 export interface UIActions {
   undo(): void;
@@ -35,6 +35,8 @@ export interface UIActions {
   ungroup(): void;
   reorder(dir: 'front' | 'back'): void;
   nodeOp(op: NodeOp): void;
+  /** точные координаты активного узла (мировые мм) */
+  setNodePos(x: number, y: number): void;
   /** PowerClip: обрезать выделенное по контуру верхнего объекта */
   powerClip(): void;
   /** вернуть содержимое PowerClip и убрать контейнер */
@@ -186,6 +188,10 @@ export function initUI(store: Store, actions: UIActions): void {
   bind('node-smooth', () => actions.nodeOp('smooth'));
   bind('node-symmetric', () => actions.nodeOp('symmetric'));
   bind('node-corner', () => actions.nodeOp('corner'));
+  bind('node-align-x', () => actions.nodeOp('align-x'));
+  bind('node-align-y', () => actions.nodeOp('align-y'));
+  bind('node-join', () => actions.nodeOp('join'));
+  bind('node-reverse', () => actions.nodeOp('reverse'));
 
   /* ---------- поворот и зеркало ---------- */
   $('tr-rot90').addEventListener('click', () => actions.transform('rot90'));
@@ -260,6 +266,13 @@ export function initUI(store: Store, actions: UIActions): void {
       return { fill: objs[0].style.fill, stroke: objs[0].style.stroke };
     },
   });
+
+  const applyNodePos = (): void => {
+    if (!Number.isFinite(val('node-x')) || !Number.isFinite(val('node-y'))) return;
+    actions.setNodePos(val('node-x'), val('node-y'));
+  };
+  $('node-x').addEventListener('change', applyNodePos);
+  $('node-y').addEventListener('change', applyNodePos);
 
   $('text-height').addEventListener('change', () => actions.setTextHeight(val('text-height')));
   bind('btn-text-path', () => actions.textOnPath(

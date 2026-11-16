@@ -609,6 +609,83 @@ $('#mix-to-fill').click();
 key('z', { ctrlKey: true });
 key('z', { ctrlKey: true });
 
+console.log('редактор узлов 3.0: сегменты, координаты, выравнивание');
+
+$('.tool-btn[data-tool="rect"]').click();
+pointer('pointerdown', 700, 650);
+pointer('pointermove', 820, 730);
+pointer('pointerup', 820, 730);
+const segObjId = store.state.selection[0];
+$('.tool-btn[data-tool="node"]').click();
+ok(window.lcx.node !== undefined, 'состояние редактора узлов доступно для проверки');
+
+const segObj = store.state.doc.objects[segObjId];
+const mm = (local) => {
+  const m = segObj.transform;
+  return { x: m.a * local.x + m.c * local.y + m.e, y: m.b * local.x + m.d * local.y + m.f };
+};
+// середина нижней стороны прямоугольника
+const s0 = segObj.path[0].segs[0];
+const midLocal = { x: (s0.a.x + s0.b.x) / 2, y: (s0.a.y + s0.b.y) / 2 };
+const midScreen = view.toScreen(mm(midLocal));
+pointer('pointerdown', midScreen.x, midScreen.y);
+ok(window.lcx.node.segment !== null, 'клик по кривой выделил сегмент');
+pointer('pointermove', midScreen.x, midScreen.y - 20);
+pointer('pointerup', midScreen.x, midScreen.y - 20);
+const segAfter = store.state.doc.objects[segObjId];
+ok(JSON.stringify(segAfter.path) !== JSON.stringify(segObj.path), 'перетаскивание сегмента изменило контур');
+key('z', { ctrlKey: true });
+ok(JSON.stringify(store.state.doc.objects[segObjId].path) === JSON.stringify(segObj.path), 'undo вернул контур');
+
+// точные координаты узла
+const firstNodeLocal = store.state.doc.objects[segObjId].path[0].start;
+const firstNodeWorld = mm(firstNodeLocal);
+const fnScreen = view.toScreen(firstNodeWorld);
+pointer('pointerdown', fnScreen.x, fnScreen.y);
+pointer('pointerup', fnScreen.x, fnScreen.y);
+ok(window.lcx.node.active !== null, 'узел выбран кликом');
+const nodeX = window.document.getElementById('node-x');
+const nodeY = window.document.getElementById('node-y');
+nodeX.value = String(Math.round((firstNodeWorld.x + 5) * 10) / 10);
+nodeY.value = String(Math.round((firstNodeWorld.y + 4) * 10) / 10);
+nodeX.dispatchEvent(new window.Event('change', { bubbles: true }));
+const movedTo = mm(store.state.doc.objects[segObjId].path[0].start);
+ok(Math.abs(movedTo.x - (firstNodeWorld.x + 5)) < 0.11 && Math.abs(movedTo.y - (firstNodeWorld.y + 4)) < 0.11,
+  `узел встал по координатам (${movedTo.x.toFixed(1)}, ${movedTo.y.toFixed(1)})`);
+key('z', { ctrlKey: true });
+
+// выравнивание узлов по X: два узла → одинаковая X
+const objNow = store.state.doc.objects[segObjId];
+window.lcx.node.selected = [{ sub: 0, index: 0 }, { sub: 0, index: 1 }];
+window.lcx.node.active = { sub: 0, index: 0 };
+$('#node-align-x').click();
+const al = store.state.doc.objects[segObjId].path[0];
+ok(Math.abs(al.start.x - al.segs[0].b.x) < 1e-6, 'узлы выровнены по X');
+key('z', { ctrlKey: true });
+
+// реверс направления подпути: у замкнутого контура стартовая точка та же,
+// а первый отрезок идёт к другому соседу — направление обхода сменилось
+const dirBefore = store.state.doc.objects[segObjId].path[0].segs[0].b;
+window.lcx.node.active = { sub: 0, index: 0 };
+$('#node-reverse').click();
+const dirAfter = store.state.doc.objects[segObjId].path[0].segs[0].b;
+ok(JSON.stringify(dirAfter) !== JSON.stringify(dirBefore), 'реверс сменил направление обхода контура');
+key('z', { ctrlKey: true });
+void objNow;
+
+// стрелки сдвигают узел, а не объект
+const beforeNudgeObj = JSON.parse(JSON.stringify(store.state.doc.objects[segObjId]));
+window.lcx.node.selected = [{ sub: 0, index: 0 }];
+window.lcx.node.active = { sub: 0, index: 0 };
+key('arrowright');
+const afterNudgeObj = store.state.doc.objects[segObjId];
+ok(JSON.stringify(afterNudgeObj.path) !== JSON.stringify(beforeNudgeObj.path), 'стрелка сдвинула узел');
+ok(JSON.stringify(afterNudgeObj.transform) === JSON.stringify(beforeNudgeObj.transform), 'объект при этом не сдвинулся');
+key('z', { ctrlKey: true });
+key('z', { ctrlKey: true });
+key('z', { ctrlKey: true });
+$('.tool-btn[data-tool="select"]').click();
+
 console.log('PowerClip: поместить внутрь и извлечь');
 
 // контейнер 60×40 и «содержимое», которое торчит за его край

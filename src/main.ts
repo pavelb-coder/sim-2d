@@ -14,13 +14,15 @@ import { ensureFont, textToPaths } from './core/text';
 import { importDxf } from './core/dxf/import';
 import { countDxfEntities, exportDxf, exportDxfSheets, slug } from './core/dxf/export';
 import { askDxfOptions } from './ui/dxfDialog';
+import { materialOf } from './core/geom/kerf';
 import { parseSvg } from './core/svg/parse';
 import { exportSvg } from './core/svg/write';
 
 import { Store } from './state/store';
+import type { Material } from './core/types';
 import { updateCmd } from './state/history';
 import { duplicate, nudge } from './state/edits';
-import { alignSelection, applyBoolean, applyCorners, applyOffset, applyPowerClip, applyTextOnPath, releasePowerClip, distributeSelection, duplicatePattern, groupSelection, nestSelection, reorderOne, reorderSelection, setObjectFlag, transformSelection, ungroupSelection } from './state/ops';
+import { alignSelection, applyBoolean, applyCorners, applyKerf as applyKerfOp, applyOffset, applyPowerClip, applyTextOnPath, releasePowerClip, distributeSelection, duplicatePattern, groupSelection, nestSelection, reorderOne, reorderSelection, setObjectFlag, transformSelection, ungroupSelection } from './state/ops';
 
 import { View } from './render/view';
 import { renderScene } from './render/scene';
@@ -390,9 +392,13 @@ function exportAs(kind: ExportKind): void {
   const sheet = store.state.sheet;
   try {
     if (kind === 'dxf' || kind === 'dxf12') {
-      const text = exportDxf(doc, { version: kind === 'dxf' ? 'R2000' : 'R12', sheetId: sheet.id });
+      const mat = materialOf(doc);
+      const kerf = mat.compensate ? mat.kerf : 0;
+      const text = exportDxf(doc, { version: kind === 'dxf' ? 'R2000' : 'R12', sheetId: sheet.id, kerf });
       download(`${baseName()}.dxf`, text, 'application/dxf');
-      toast(`DXF ${kind === 'dxf' ? 'R2000' : 'R12'} сохранён: слои CUT/ENGRAVE, миллиметры`);
+      toast(kerf > 0
+        ? `DXF ${kind === 'dxf' ? 'R2000' : 'R12'} сохранён с компенсацией реза ${kerf} мм`
+        : `DXF ${kind === 'dxf' ? 'R2000' : 'R12'} сохранён: слои CUT/ENGRAVE, миллиметры`);
       return;
     }
     if (kind === 'svg') {
@@ -414,7 +420,8 @@ function exportAs(kind: ExportKind): void {
       return;
     }
     if (kind === 'dxf-all') {
-      const files = exportDxfSheets(doc);
+      const matAll = materialOf(doc);
+      const files = exportDxfSheets(doc, { kerf: matAll.compensate ? matAll.kerf : 0 });
       for (const f of files) download(f.name, f.text, 'application/dxf');
       toast(`DXF всех листов: ${files.length} файл(ов)`);
       return;
@@ -433,15 +440,20 @@ async function exportDxfWithOptions(): Promise<void> {
   const sheet = store.state.sheet;
   const selected = store.state.selection;
   const selectedEntities = countDxfEntities(doc, sheet.id, selected);
+  const mat = materialOf(doc);
   const res = await askDxfOptions({
     entities: countDxfEntities(doc, sheet.id),
     selectedEntities,
     sheets: doc.sheets.length,
-    defaults: { version: 'R2000', units: 'mm', tolerance: 0.01 },
+    material: { name: mat.name, thickness: mat.thickness, kerf: mat.kerf },
+    defaults: { version: 'R2000', units: 'mm', tolerance: 0.01, compensate: mat.compensate },
   });
   if (!res) return;
   try {
-    const opts = { version: res.version, units: res.units, tolerance: res.tolerance };
+    // выбор «учесть рез» запоминается в документе — следующий экспорт уже с ним
+    if (res.compensate !== mat.compensate) store.updateMaterial({ compensate: res.compensate });
+    const kerf = res.compensate ? mat.kerf : 0;
+    const opts = { version: res.version, units: res.units, tolerance: res.tolerance, kerf };
     if (res.scope === 'all-sheets') {
       const files = exportDxfSheets(doc, opts);
       for (const f of files) download(f.name, f.text, 'application/dxf');
@@ -457,7 +469,8 @@ async function exportDxfWithOptions(): Promise<void> {
     const suffix = res.scope === 'selection' ? '-selection' : '';
     download(`${baseName()}${suffix}.dxf`, text, 'application/dxf');
     const n = countDxfEntities(doc, sheet.id, onlyIds);
-    toast(`DXF ${res.version}: ${n} контур(ов), ${res.units === 'inch' ? 'дюймы' : 'миллиметры'}, слои CUT/ENGRAVE/SCORE`);
+    const kerfNote = kerf > 0 ? `, компенсация реза ${kerf} мм` : '';
+    toast(`DXF ${res.version}: ${n} контур(ов), ${res.units === 'inch' ? 'дюймы' : 'миллиметры'}${kerfNote}`);
   } catch (err) {
     toast(`Ошибка экспорта DXF: ${(err as Error).message}`);
   }
@@ -862,6 +875,17 @@ const actions = {
     const err = applyPowerClip(store);
     if (err) toast(err);
     else toast('Содержимое обрезано по контуру нижнего объекта — «Извлечь содержимое» вернёт контуры');
+    requestRender('both');
+  },
+  setMaterial(patch: Partial<Material>): void {
+    store.updateMaterial(patch);
+    requestRender('both');
+  },
+  applyKerf(): void {
+    const err = applyKerfOp(store);
+    if (err) { toast(err); return; }
+    const m = materialOf(store.state.doc);
+    toast(`Рез ${+m.kerf.toFixed(2)} мм учтён: контуры реза раздуты на ${+(m.kerf / 2).toFixed(3)} мм (Ctrl+Z отменит)`);
     requestRender('both');
   },
   releasePowerClip(): void {

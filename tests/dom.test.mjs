@@ -686,6 +686,71 @@ key('z', { ctrlKey: true });
 key('z', { ctrlKey: true });
 $('.tool-btn[data-tool="select"]').click();
 
+console.log('материал и компенсация реза');
+
+// пресет материала задаёт толщину и рез
+const matSel = $('#mat-preset');
+ok(matSel.options.length >= 8, `в списке материалов ${matSel.options.length} пресетов`);
+matSel.value = 'plywood-6';
+matSel.dispatchEvent(new window.Event('change', { bubbles: true }));
+const mat6 = store.state.doc.material;
+ok(mat6.thickness === 6 && Math.abs(mat6.kerf - 0.18) < 1e-9,
+  `«Фанера 6 мм» подставила толщину ${mat6.thickness} и рез ${mat6.kerf}`);
+
+// ручной ввод реза переводит материал в «свой»
+const kerfInput = $('#mat-kerf');
+kerfInput.value = '0.3';
+kerfInput.dispatchEvent(new window.Event('change', { bubbles: true }));
+ok(store.state.doc.material.kerf === 0.3 && store.state.doc.material.presetId === 'custom',
+  'ручной рез 0,3 мм делает материал своим');
+ok($('#mat-hint').textContent.includes('0.3'), 'подсказка показывает текущий рез');
+
+// чекбокс компенсации при экспорте живёт в документе
+const chkKerf = $('#mat-compensate');
+chkKerf.checked = true;
+chkKerf.dispatchEvent(new window.Event('change', { bubbles: true }));
+ok(store.state.doc.material.compensate === true, 'галочка «учитывать рез в DXF» сохранена в документе');
+
+// «Учесть рез в контурах»: деталь 120×80 вырастает на 0.3 мм
+$('.tool-btn[data-tool="rect"]').click();
+pointer('pointerdown', 300, 620);
+pointer('pointermove', 460, 720);
+pointer('pointerup', 460, 720);
+const kerfObjId = store.state.selection[0];
+const sizeOf = (id) => {
+  const o = store.state.doc.objects[id];
+  const xs = [], ys = [];
+  for (const sp of o.path) {
+    const pts = [sp.start, ...sp.segs.flatMap((sg) => ('c1' in sg ? [sg.c1, sg.c2, sg.b] : [sg.b]))];
+    for (const p of pts) {
+      xs.push(o.transform.a * p.x + o.transform.c * p.y + o.transform.e);
+      ys.push(o.transform.b * p.x + o.transform.d * p.y + o.transform.f);
+    }
+  }
+  return { w: Math.max(...xs) - Math.min(...xs), h: Math.max(...ys) - Math.min(...ys) };
+};
+const beforeKerf = sizeOf(kerfObjId);
+$('#mat-apply').click();
+const afterKerf = sizeOf(kerfObjId);
+ok(Math.abs(afterKerf.w - (beforeKerf.w + 0.3)) < 0.02 && Math.abs(afterKerf.h - (beforeKerf.h + 0.3)) < 0.02,
+  `контур вырос на рез: ${beforeKerf.w.toFixed(1)}×${beforeKerf.h.toFixed(1)} → ${afterKerf.w.toFixed(1)}×${afterKerf.h.toFixed(1)}`);
+key('z', { ctrlKey: true });
+ok(Math.abs(sizeOf(kerfObjId).w - beforeKerf.w) < 1e-6, 'undo вернул исходный контур');
+
+// гравировочный объект рез не трогает
+const engraveLayer = store.state.doc.layers.find((l) => l.op === 'engrave');
+ok(!!engraveLayer, 'в документе есть слой гравировки');
+store.select([kerfObjId]);
+store.state.doc.objects[kerfObjId].layerId = engraveLayer.id;
+$('#mat-apply').click();
+ok(Math.abs(sizeOf(kerfObjId).w - beforeKerf.w) < 1e-6, 'объект на слое гравировки не компенсируется');
+key('z', { ctrlKey: true });
+
+// документ переживает сохранение/загрузку .lcx вместе с материалом
+const saved = JSON.parse(JSON.stringify(store.state.doc));
+ok(saved.material && saved.material.kerf === 0.3, 'материал уходит в проект .lcx');
+$('.tool-btn[data-tool="select"]').click();
+
 console.log('PowerClip: поместить внутрь и извлечь');
 
 // контейнер 60×40 и «содержимое», которое торчит за его край

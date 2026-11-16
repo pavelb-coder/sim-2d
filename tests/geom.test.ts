@@ -15,6 +15,8 @@ import { moveNodes, moveNodeHandle, nodeHandles, nodesInBox, setNodeType, nodePo
 import { polygonPath, starPath } from '../src/core/shape';
 import { handleAxes, anchorFor, handlePoints, hitHandle } from '../src/render/handles';
 import { View } from '../src/render/view';
+import { compensateKerf, kerfOffset, materialOf, defaultMaterial, MATERIAL_PRESETS, presetById } from '../src/core/geom/kerf';
+import { pathsArea } from '../src/core/geom/boolean';
 
 let passed = 0;
 function test(name: string, fn: () => void): void {
@@ -485,6 +487,60 @@ test('узлы 3.0: соединение концов, реверс и выра�
   const p2 = nodePoint(aligned, { sub: 0, index: 1 });
   assert.ok(p1 && p2);
   near(p1.x, p2.x, 1e-9);
+});
+
+test('материал и рез: пресеты, kerfOffset, значения по умолчанию', () => {
+  assert.ok(MATERIAL_PRESETS.length >= 8);
+  const ply = presetById('plywood-6');
+  assert.ok(ply);
+  assert.equal(ply!.thickness, 6);
+  assert.ok(ply!.kerf > 0 && ply!.kerf < 0.5, 'рез в разумных пределах');
+  near(kerfOffset(0.3), 0.15);
+  near(kerfOffset(0), 0);
+  near(kerfOffset(-1), 0, 1e-12);
+
+  const def = defaultMaterial();
+  assert.equal(def.presetId, 'plywood-3');
+  assert.equal(def.compensate, false);
+
+  // старый документ без material получает значения по умолчанию
+  const old = materialOf({});
+  assert.equal(old.name, def.name);
+  // битые значения не ломают документ
+  const broken = materialOf({ material: { presetId: 'custom', name: '', thickness: Number.NaN, kerf: -5, compensate: 1 as unknown as boolean } });
+  assert.equal(broken.thickness, 3);
+  assert.ok(broken.kerf >= 0, 'отрицательный рез приводится к нулю');
+  assert.equal(broken.compensate, true);
+});
+
+test('компенсация реза: деталь растёт, отверстие сжимается', () => {
+  const plate = [...rectPath(100, 60), ...ellipsePath(20, 20)];
+  const before = bboxOfSubPaths(plate);
+  const k = compensateKerf(plate, 0.2);       // по 0,1 мм на сторону
+  const after = bboxOfSubPaths(k);
+  near(after.w, before.w + 0.2, 0.02);
+  near(after.h, before.h + 0.2, 0.02);
+  near(after.x, before.x - 0.1, 0.02);
+
+  // площадь: внешний прямоугольник 100,2 × 60,2 минус отверстие r = 9,9
+  const expected = 100.2 * 60.2 - Math.PI * 9.9 * 9.9;
+  const actual = pathsArea(k);
+  assert.ok(Math.abs(actual - expected) < expected * 0.01, `площадь ${actual.toFixed(1)} ≠ ${expected.toFixed(1)}`);
+  // отверстие действительно стало меньше: площадь больше, чем у детали без реза
+  // (100 × 60 − π·10² = 5685,84 мм²) — значит внешний контур вырос, а отверстие сжалось
+  assert.ok(actual > 5685.84, 'деталь с компенсацией больше исходной');
+  assert.equal(k.filter((sp) => sp.closed).length, 2, 'оба контура на месте');
+});
+
+test('компенсация реза: нулевой рез и разомкнутые контуры не меняются', () => {
+  const plate = rectPath(50, 30);
+  assert.equal(compensateKerf(plate, 0), plate, 'рез 0 — тот же контур');
+  // линия-гравировка остаётся отрезком, а не превращается в полигон
+  const line = linePath(20)[0];
+  const mixed = compensateKerf([...plate, line], 0.1);
+  const open = mixed.filter((sp) => !sp.closed);
+  assert.equal(open.length, 1, 'разомкнутый контур сохранился');
+  assert.equal(open[0].segs[0].t, 'l');
 });
 
 console.log(`\n${passed} тестов пройдено`);

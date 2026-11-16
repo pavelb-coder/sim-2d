@@ -7,7 +7,8 @@ import { updateCmd } from '../state/history';
 import { pathLength, transformSubPaths, worldBBox } from '../core/geom/path';
 import { decompose } from '../core/geom/transform';
 import type { Issue } from '../core/validate';
-import type { Obj, Op } from '../core/types';
+import type { Material, Obj, Op } from '../core/types';
+import { MATERIAL_PRESETS, materialOf, presetById } from '../core/geom/kerf';
 
 export type ExportKind = 'dxf' | 'dxf12' | 'dxf-settings' | 'dxf-all' | 'svg' | 'png' | 'project';
 export type NodeOp = 'curve' | 'line' | 'close' | 'break' | 'delete' | 'smooth' | 'symmetric' | 'corner' | 'align-x' | 'align-y' | 'join' | 'reverse';
@@ -41,6 +42,10 @@ export interface UIActions {
   powerClip(): void;
   /** вернуть содержимое PowerClip и убрать контейнер */
   releasePowerClip(): void;
+  /** материал и компенсация реза (параметры документа) */
+  setMaterial(patch: Partial<Material>): void;
+  /** учесть рез в геометрии контуров слоя реза */
+  applyKerf(): void;
   /** текст по контуру выделенного объекта */
   textOnPath(text: string, height: number, offset: number, align: 'start' | 'center' | 'end'): void;
   setTextHeight(mm: number): void;
@@ -267,6 +272,32 @@ export function initUI(store: Store, actions: UIActions): void {
     },
   });
 
+  /* ---------- блок «Материал и рез» ---------- */
+  const matSel = $<HTMLSelectElement>('mat-preset');
+  for (const p of MATERIAL_PRESETS) {
+    const opt = document.createElement('option');
+    opt.value = p.id;
+    opt.textContent = `${p.name} · рез ${p.kerf} мм`;
+    matSel.appendChild(opt);
+  }
+  matSel.addEventListener('change', () => {
+    const p = presetById(matSel.value);
+    if (!p) return;
+    actions.setMaterial({ presetId: p.id, name: p.name, thickness: p.thickness, kerf: p.kerf });
+  });
+  const applyMatField = (field: 'thickness' | 'kerf'): void => {
+    const v = val(`mat-${field}`);
+    if (!Number.isFinite(v)) return;
+    // ручная правка толщины/реза — уже «свой материал»
+    actions.setMaterial({ [field]: v, presetId: 'custom', name: 'Свой материал' } as Partial<Material>);
+  };
+  $('mat-thickness').addEventListener('change', () => applyMatField('thickness'));
+  $('mat-kerf').addEventListener('change', () => applyMatField('kerf'));
+  $<HTMLInputElement>('mat-compensate').addEventListener('change', (e) => {
+    actions.setMaterial({ compensate: (e.target as HTMLInputElement).checked });
+  });
+  bind('mat-apply', () => actions.applyKerf());
+
   const applyNodePos = (): void => {
     if (!Number.isFinite(val('node-x')) || !Number.isFinite(val('node-y'))) return;
     actions.setNodePos(val('node-x'), val('node-y'));
@@ -289,6 +320,16 @@ export function initUI(store: Store, actions: UIActions): void {
     }
     $<HTMLButtonElement>('btn-undo').disabled = !store.history.canUndo;
     $<HTMLButtonElement>('btn-redo').disabled = !store.history.canRedo;
+
+    const mat = materialOf(state.doc);
+    matSel.value = presetById(mat.presetId) ? mat.presetId : 'custom';
+    setVal('mat-thickness', mat.thickness);
+    setVal('mat-kerf', mat.kerf);
+    $<HTMLInputElement>('mat-compensate').checked = mat.compensate;
+    const hint = $('mat-hint');
+    hint.textContent = mat.kerf > 0
+      ? `${mat.name}, ${+mat.thickness.toFixed(2)} мм · рез ${+mat.kerf.toFixed(2)} мм · компенсация по ${+(mat.kerf / 2).toFixed(3)} мм на контур`
+      : `${mat.name}, ${+mat.thickness.toFixed(2)} мм · компенсация выключена (рез 0)`;
 
     const sheet = state.sheet;
     setVal('sheet-w', sheet.width);

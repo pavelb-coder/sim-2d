@@ -354,6 +354,8 @@ input[type="color"] {
   cursor: pointer;
 }
 .check input { accent-color: var(--accent); }
+/* чекбокс внутри модального окна: крупнее и с отступом от полей */
+.modal-check { padding: 8px 0; font-size: 12.5px; }
 
 .seg {
   display: flex;

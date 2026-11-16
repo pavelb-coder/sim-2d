@@ -13,6 +13,8 @@ export interface DxfDialogResult {
   scope: DxfScope;
   units: 'mm' | 'inch';
   tolerance: number;
+  /** компенсировать рез материала (kerf/2 к габариту детали) */
+  compensate: boolean;
 }
 
 export interface DxfDialogInfo {
@@ -22,6 +24,8 @@ export interface DxfDialogInfo {
   selectedEntities: number;
   /** сколько листов в документе */
   sheets: number;
+  /** материал документа: подпись и ширина реза */
+  material?: { name: string; thickness: number; kerf: number };
   defaults?: Partial<DxfDialogResult>;
 }
 
@@ -118,6 +122,21 @@ export function askDxfOptions(info: DxfDialogInfo): Promise<DxfDialogResult | nu
     tol.value = String(d.tolerance ?? 0.01);
     tolRow.appendChild(tol);
 
+    /* материал и компенсация реза */
+    const mat = info.material;
+    const matRow = document.createElement('label');
+    matRow.className = 'check modal-check';
+    const kerfChk = document.createElement('input');
+    kerfChk.type = 'checkbox';
+    kerfChk.id = 'dxf-kerf';
+    kerfChk.checked = d.compensate ?? false;
+    kerfChk.disabled = !mat || !(mat.kerf > 0);
+    matRow.append(kerfChk, document.createTextNode(
+      mat && mat.kerf > 0
+        ? ` Учесть рез ${mat.kerf.toFixed(2)} мм (${mat.name}) — контуры CUT раздуваются на ${(mat.kerf / 2).toFixed(2)} мм`
+        : ' Учесть рез — задайте ширину реза в блоке «Материал»',
+    ));
+
     const hint = document.createElement('p');
     hint.className = 'modal-hint';
     hint.id = 'dxf-hint';
@@ -135,7 +154,7 @@ export function askDxfOptions(info: DxfDialogInfo): Promise<DxfDialogResult | nu
     ok.textContent = 'Скачать DXF';
 
     row.append(cancel, ok);
-    box.append(h, versionRow, scopeRow, unitsRow, tolRow, hint, row);
+    box.append(h, versionRow, scopeRow, unitsRow, tolRow, matRow, hint, row);
     back.appendChild(box);
     document.body.appendChild(back);
 
@@ -150,6 +169,7 @@ export function askDxfOptions(info: DxfDialogInfo): Promise<DxfDialogResult | nu
       scope: (scope.value as DxfScope) ?? 'sheet',
       units: units.value === 'inch' ? 'inch' : 'mm',
       tolerance: Math.min(0.5, Math.max(0.001, Number(tol.value) || 0.01)),
+      compensate: kerfChk.checked && !!mat && mat.kerf > 0,
     });
 
     const onKey = (e: KeyboardEvent): void => {

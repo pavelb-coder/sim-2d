@@ -609,6 +609,56 @@ $('#mix-to-fill').click();
 key('z', { ctrlKey: true });
 key('z', { ctrlKey: true });
 
+console.log('экспорт DXF: диалог с настройками');
+
+// перехватываем файлы, которые приложение отдаёт в download()
+const blobs = [];
+URL.createObjectURL = (blob) => { blobs.push(blob); return 'blob:test'; };
+URL.revokeObjectURL = () => undefined;
+const tick = () => new Promise((r) => setTimeout(r, 30));
+
+store.select([store.state.doc.order[0]]);
+void window.lcx.exportDxfWithOptions();
+await tick();
+ok(!!window.document.getElementById('dxf-ok'), 'открылся диалог экспорта DXF');
+ok((window.document.getElementById('dxf-scope').textContent ?? '').includes('контур'),
+  'в диалоге видно количество контуров');
+window.document.getElementById('dxf-cancel').click();
+ok(!window.document.getElementById('dxf-ok'), '«Отмена» закрывает диалог без файла');
+ok(blobs.length === 0, 'после отмены ничего не скачано');
+
+// весь лист, R2000, мм
+void window.lcx.exportDxfWithOptions();
+await tick();
+window.document.getElementById('dxf-scope').value = 'sheet';
+window.document.getElementById('dxf-ok').click();
+await tick();
+ok(blobs.length === 1, 'файл всего листа сформирован');
+const sheetDxf = await blobs[0].text();
+ok(sheetDxf.includes('AC1015'), 'R2000 в заголовке (AC1015)');
+ok(sheetDxf.includes('LWPOLYLINE'), 'полилинии LWPOLYLINE');
+const sheetParts = (sheetDxf.match(/LWPOLYLINE|CIRCLE/g) ?? []).length;
+ok(sheetParts > 1, `в файле ${sheetParts} сущностей`);
+
+// только выделенное, R12, дюймы, своя точность
+void window.lcx.exportDxfWithOptions();
+await tick();
+window.document.getElementById('dxf-version').value = 'R12';
+window.document.getElementById('dxf-scope').value = 'selection';
+window.document.getElementById('dxf-units').value = 'inch';
+window.document.getElementById('dxf-tolerance').value = '0.05';
+window.document.getElementById('dxf-ok').click();
+await tick();
+ok(blobs.length === 2, 'файл выделения сформирован');
+const selDxf = await blobs[1].text();
+ok(selDxf.includes('AC1009'), 'R12 в заголовке (AC1009)');
+ok(selDxf.includes('POLYLINE') && !selDxf.includes('LWPOLYLINE'), 'в R12 только POLYLINE + VERTEX');
+ok(/\$INSUNITS\s*\n\s*70\s*\n\s*1\b/.test(selDxf), 'единицы — дюймы (INSUNITS=1)');
+const selParts = (selDxf.match(/POLYLINE|CIRCLE/g) ?? []).length;
+ok(selParts < sheetParts, `выделение меньше листа (${selParts} < ${sheetParts})`);
+ok(text('#toast').includes('дюймы'), `тост сообщает единицы: «${text('#toast')}»`);
+key('z', { ctrlKey: true });
+
 console.log('экспорт (без скачивания)');
 const dxf = window.lcx.exportDxf(store.state.doc);
 ok(typeof dxf === 'string' && dxf.includes('AC1015') && dxf.includes('ENTITIES'), 'DXF собирается');

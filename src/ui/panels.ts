@@ -9,7 +9,7 @@ import { decompose } from '../core/geom/transform';
 import type { Issue } from '../core/validate';
 import type { Obj, Op } from '../core/types';
 
-export type ExportKind = 'dxf' | 'dxf12' | 'svg' | 'png' | 'project';
+export type ExportKind = 'dxf' | 'dxf12' | 'dxf-settings' | 'dxf-all' | 'svg' | 'png' | 'project';
 export type NodeOp = 'curve' | 'line' | 'close' | 'break' | 'delete' | 'smooth' | 'symmetric' | 'corner';
 
 export interface UIActions {

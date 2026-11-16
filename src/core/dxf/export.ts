@@ -10,7 +10,18 @@ export interface DxfExportOptions {
   sheetId?: Id;
   /** допуск сглаживания Безье, мм */
   tolerance?: number;
+  /** выгрузить только эти объекты (например, выделение) */
+  onlyIds?: Id[];
+  /**
+   * Единицы файла: миллиметры (INSUNITS=4) или дюймы (INSUNITS=1).
+   * Во втором случае координаты пересчитываются в дюймы — так файл открывается
+   * в американских Cam/CAD без ручной правки масштаба.
+   */
+  units?: 'mm' | 'inch';
 }
+
+/** Во сколько раз масштабировать координаты при выгрузке. */
+export const unitScale = (units: 'mm' | 'inch' = 'mm'): number => (units === 'inch' ? 1 / 25.4 : 1);
 
 const LAYER_OF_OP: Record<Op, { name: string; aci: number }> = {
   cut: { name: 'CUT', aci: 1 },
@@ -163,10 +174,13 @@ export function exportDxf(doc: Doc, opts: DxfExportOptions = {}): string {
   const tol = opts.tolerance ?? 0.01;
   const sheet = activeSheet(doc);
   const w = new Writer(version === 'R2000');
+  const units = opts.units ?? 'mm';
+  const k = unitScale(units);
+  const only = opts.onlyIds ? new Set(opts.onlyIds) : null;
 
   const objs = doc.order
     .map((id) => doc.objects[id])
-    .filter((o): o is Obj => !!o && o.sheetId === sheetId && !o.hidden);
+    .filter((o): o is Obj => !!o && o.sheetId === sheetId && !o.hidden && (!only || only.has(o.id)));
 
   // геометрия по слоям
   const layerOf = new Map<Id, string>();
@@ -174,14 +188,15 @@ export function exportDxf(doc: Doc, opts: DxfExportOptions = {}): string {
 
   let extent: Box | null = null;
   for (const obj of objs) {
-    extent = boxUnion(extent, bboxOfSubPaths(transformSubPaths(obj.path, obj.transform)));
+    extent = boxUnion(extent, bboxOfSubPaths(transformSubPaths(obj.path, worldMatrix(obj, k))));
   }
-  const ex = extent ?? { x: 0, y: 0, w: sheet.width, h: sheet.height };
+  const raw = extent ?? { x: 0, y: 0, w: sheet.width, h: sheet.height };
+  const ex = { x: raw.x * k, y: raw.y * k, w: raw.w * k, h: raw.h * k };
 
   // HEADER
   w.add(0, 'SECTION'); w.add(2, 'HEADER');
   w.add(9, '$ACADVER'); w.add(1, version === 'R2000' ? 'AC1015' : 'AC1009');
-  w.add(9, '$INSUNITS'); w.add(70, 4);
+  w.add(9, '$INSUNITS'); w.add(70, units === 'inch' ? 1 : 4);
   w.add(9, '$MEASUREMENT'); w.add(70, 1);
   w.add(9, '$LUNITS'); w.add(70, 2);
   w.add(9, '$LUPREC'); w.add(70, 4);
@@ -228,7 +243,7 @@ export function exportDxf(doc: Doc, opts: DxfExportOptions = {}): string {
 
   const draw = (obj: Obj): void => {
     const layer = layerOf.get(obj.layerId) ?? 'CUT';
-    const world = transformSubPaths(obj.path, obj.transform);
+    const world = transformSubPaths(obj.path, worldMatrix(obj, k));
     for (const sp of world) {
       const circle = asCircle(sp);
       if (circle) { writeCircle(w, layer, circle.center, circle.r); continue; }
@@ -239,7 +254,7 @@ export function exportDxf(doc: Doc, opts: DxfExportOptions = {}): string {
 
   // порядок резки: сначала внутренние контуры (по площади), потом внешние
   const withArea = objs.map((o) => {
-    const world = transformSubPaths(o.path, o.transform);
+    const world = transformSubPaths(o.path, worldMatrix(o, k));
     const area = world.reduce((sum, sp) => sum + Math.abs(polyArea(flattenSubPaths([sp], 0.05)[0] ?? [])), 0);
     return { obj: o, area };
   });
@@ -252,6 +267,13 @@ export function exportDxf(doc: Doc, opts: DxfExportOptions = {}): string {
   return w.toString();
 }
 
+/** Матрица объекта с пересчётом единиц (дюймы масштабируют мировые координаты). */
+function worldMatrix(obj: Obj, k: number): import('../types').Mat2x3 {
+  const t = obj.transform;
+  if (k === 1) return t;
+  return { a: t.a * k, b: t.b * k, c: t.c * k, d: t.d * k, e: t.e * k, f: t.f * k };
+}
+
 function polyArea(pts: Vec2[]): number {
   let s = 0;
   for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
@@ -261,11 +283,13 @@ function polyArea(pts: Vec2[]): number {
 }
 
 /** Статистика для UI: сколько сущностей уйдёт в файл. */
-export function countDxfEntities(doc: Doc, sheetId: Id = doc.activeSheetId): number {
+export function countDxfEntities(doc: Doc, sheetId: Id = doc.activeSheetId, onlyIds?: Id[]): number {
+  const only = onlyIds ? new Set(onlyIds) : null;
   let n = 0;
   for (const id of doc.order) {
     const o = doc.objects[id];
     if (!o || o.sheetId !== sheetId || o.hidden) continue;
+    if (only && !only.has(o.id)) continue;
     n += o.path.length;
   }
   return n;

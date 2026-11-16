@@ -12,7 +12,8 @@ import { findSnap, type SnapResult } from './core/snap';
 import { validateDoc, type Issue } from './core/validate';
 import { ensureFont, textToPaths } from './core/text';
 import { importDxf } from './core/dxf/import';
-import { exportDxf, exportDxfSheets, slug } from './core/dxf/export';
+import { countDxfEntities, exportDxf, exportDxfSheets, slug } from './core/dxf/export';
+import { askDxfOptions } from './ui/dxfDialog';
 import { parseSvg } from './core/svg/parse';
 import { exportSvg } from './core/svg/write';
 
@@ -373,13 +374,57 @@ function exportAs(kind: ExportKind): void {
       toast('Проект сохранён — откройте его кнопкой «Открыть…»');
       return;
     }
-    if (kind === ('dxf-all' as ExportKind)) {
+    if (kind === 'dxf-settings') {
+      void exportDxfWithOptions();
+      return;
+    }
+    if (kind === 'dxf-all') {
       const files = exportDxfSheets(doc);
       for (const f of files) download(f.name, f.text, 'application/dxf');
+      toast(`DXF всех листов: ${files.length} файл(ов)`);
       return;
     }
   } catch (err) {
     toast(`Ошибка экспорта: ${(err as Error).message}`);
+  }
+}
+
+/**
+ * Экспорт DXF с настройками: диалог → файл. Покрывает выбор «только выделенное»,
+ * дюймы и точность кривых; быстрые пункты меню остаются одним кликом.
+ */
+async function exportDxfWithOptions(): Promise<void> {
+  const doc = store.state.doc;
+  const sheet = store.state.sheet;
+  const selected = store.state.selection;
+  const selectedEntities = countDxfEntities(doc, sheet.id, selected);
+  const res = await askDxfOptions({
+    entities: countDxfEntities(doc, sheet.id),
+    selectedEntities,
+    sheets: doc.sheets.length,
+    defaults: { version: 'R2000', units: 'mm', tolerance: 0.01 },
+  });
+  if (!res) return;
+  try {
+    const opts = { version: res.version, units: res.units, tolerance: res.tolerance };
+    if (res.scope === 'all-sheets') {
+      const files = exportDxfSheets(doc, opts);
+      for (const f of files) download(f.name, f.text, 'application/dxf');
+      toast(`DXF ${res.version} по листам: ${files.length} файл(ов), ${res.units === 'inch' ? 'дюймы' : 'мм'}`);
+      return;
+    }
+    const onlyIds = res.scope === 'selection' ? selected : undefined;
+    if (res.scope === 'selection' && !onlyIds?.length) {
+      toast('Ничего не выделено — выберите объекты или выгрузите весь лист');
+      return;
+    }
+    const text = exportDxf(doc, { ...opts, sheetId: sheet.id, onlyIds });
+    const suffix = res.scope === 'selection' ? '-selection' : '';
+    download(`${baseName()}${suffix}.dxf`, text, 'application/dxf');
+    const n = countDxfEntities(doc, sheet.id, onlyIds);
+    toast(`DXF ${res.version}: ${n} контур(ов), ${res.units === 'inch' ? 'дюймы' : 'миллиметры'}, слои CUT/ENGRAVE/SCORE`);
+  } catch (err) {
+    toast(`Ошибка экспорта DXF: ${(err as Error).message}`);
   }
 }
 
@@ -655,6 +700,7 @@ window.addEventListener('keydown', (e) => {
   if (mod && key === 'y') { e.preventDefault(); actions.redo(); return; }
   if (mod && key === 'd') { e.preventDefault(); actions.duplicate(); return; }
   if (mod && key === 's') { e.preventDefault(); exportAs('project'); return; }
+  if (mod && key === 'e') { e.preventDefault(); exportAs('dxf-settings'); return; }
   if (mod && key === 'o') { e.preventDefault(); pickFile(); return; }
   if (mod && key === 'q') { e.preventDefault(); nodeToolOp('curve'); return; }
   if (mod && key === 'g') { e.preventDefault(); if (e.shiftKey) actions.ungroup(); else actions.group(); return; }
@@ -876,6 +922,7 @@ document.getElementById('file-input')?.addEventListener('change', (e) => {
 /* экспорт доступен и из консоли (удобно для проверок) */
 (window as unknown as { lcx?: unknown }).lcx = {
   store, view, exportDxf, exportSvg, validateDoc, boxUnion,
+  exportDxfWithOptions: () => exportDxfWithOptions(),
   // панели: состояние секций (пригодится и для отладки)
   panels: { init: initPanelCollapse, collapseAll, isCollapsed },
 };

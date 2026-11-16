@@ -57,8 +57,9 @@ const ok = (cond, msg) => {
 ok(errors.length === 0, `нет ошибок при загрузке${errors.length ? `: ${errors.slice(0, 3).join(' | ')}` : ''}`);
 ok(typeof w.lcx === 'object', 'приложение инициализировалось (window.lcx на месте)');
 ok(doc.querySelectorAll('.tool-btn').length === 8, `панель инструментов: ${doc.querySelectorAll('.tool-btn').length} кнопок`);
-ok(doc.querySelectorAll('aside.panel .pblock').length === 14, 'все 14 блоков панели на месте');
-ok(doc.querySelectorAll('h2.phead').length === 14, 'заголовки блоков стали кнопками (докеры работают)');
+const blockCount = doc.querySelectorAll('aside.panel .pblock').length;
+ok(blockCount >= 15, `блоки панели на месте (${blockCount})`);
+ok(doc.querySelectorAll('h2.phead').length === blockCount, 'заголовки всех блоков стали кнопками (докеры работают)');
 ok([...doc.querySelectorAll('.pblock')].every((b) => b.children.length > 1), 'содержимое блоков не потерялось');
 ok(!!doc.getElementById('panels-expand') && !!doc.getElementById('panels-collapse'), 'кнопки «свернуть/развернуть всё» на месте');
 ok((w.lcx?.store?.state?.doc?.order?.length ?? 0) > 0, 'демо-документ загружен');

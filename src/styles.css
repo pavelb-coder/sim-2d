@@ -637,3 +637,108 @@ input[type="color"] {
 .stats { display: flex; flex-direction: column; gap: 3px; margin-bottom: 8px; font-size: 12px; color: var(--muted); }
 .stats .stat-line { display: flex; justify-content: space-between; gap: 8px; }
 .stats .stat-line b { color: var(--ink); font-weight: 600; font-variant-numeric: tabular-nums; }
+
+/* ---------- блок «Цвет»: палитра и смеситель ---------- */
+.color-current {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 8px;
+  font-size: 11px;
+  color: var(--ink-2);
+}
+
+.cc { display: flex; align-items: center; gap: 5px; }
+
+.cc-dot {
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  border: 1px solid var(--line);
+  background: transparent;
+  /* шахматка вместо «нет цвета» */
+  background-image: linear-gradient(45deg, #e2e8f0 25%, transparent 25%, transparent 75%, #e2e8f0 75%),
+    linear-gradient(45deg, #e2e8f0 25%, transparent 25%, transparent 75%, #e2e8f0 75%);
+  background-size: 8px 8px;
+  background-position: 0 0, 4px 4px;
+}
+
+.palette {
+  display: grid;
+  grid-template-columns: repeat(12, 1fr);
+  gap: 3px;
+  margin-bottom: 6px;
+}
+
+.sw {
+  aspect-ratio: 1 / 1;
+  min-height: 16px;
+  padding: 0;
+  border: 1px solid rgba(15, 23, 42, .18);
+  border-radius: 4px;
+  cursor: pointer;
+  position: relative;
+}
+
+.sw:hover { transform: scale(1.12); border-color: var(--ink-2); }
+
+.sw.is-active {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+  z-index: 1;
+}
+
+.sw-none {
+  background: #fff;
+  overflow: hidden;
+}
+
+.sw-none::after {
+  content: '';
+  position: absolute;
+  inset: -2px;
+  border-top: 1px solid #e0413c;
+  transform: rotate(-45deg);
+  transform-origin: center;
+}
+
+.mixer { margin-top: 4px; }
+.mixer .field-row { margin-bottom: 4px; }
+.mixer input[type='range'] {
+  width: 130px;
+  accent-color: var(--accent);
+}
+
+.mixer-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 6px 0;
+}
+
+.mix-preview {
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  border: 1px solid var(--line);
+  flex: none;
+}
+
+.mixer-row input[type='text'] {
+  flex: 1;
+  min-width: 0;
+  height: 26px;
+  padding: 0 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  font: inherit;
+  font-size: 12px;
+  color: var(--ink);
+  background: var(--panel);
+}
+
+.mixer .ghost-btn.is-active {
+  border-color: var(--accent);
+  color: var(--accent-ink);
+  background: var(--accent-soft);
+}

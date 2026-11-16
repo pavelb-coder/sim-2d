@@ -513,7 +513,7 @@ ok(num() === objCountBefore, 'undo убрал текст по контуру');
 console.log('сворачиваемые панели (докеры)');
 
 const blocks = [...window.document.querySelectorAll('aside.panel .pblock')];
-ok(blocks.length === 14, `в панели ${blocks.length} блоков`);
+ok(blocks.length >= 15, `в панели ${blocks.length} блоков`);
 ok(blocks.every((b) => b.querySelector('h2.phead[role="button"]')), 'у каждого блока заголовок-кнопка');
 ok(blocks.every((b) => !!b.dataset.panel), 'у каждого блока есть стабильный ключ data-panel');
 ok(blocks.every((b) => !b.classList.contains('is-collapsed')), 'по умолчанию все блоки развёрнуты');
@@ -553,6 +553,61 @@ window.lcx.panels.init();
 firstHead.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
 ok(first.classList.contains('is-collapsed'), 'Enter на заголовке сворачивает блок');
 firstHead.click();
+
+console.log('блок «Цвет»: палитра и смеситель');
+
+const swatches = [...window.document.querySelectorAll('#palette .sw')];
+ok(swatches.length === 36, `в палитре ${swatches.length} образцов (35 цветов + «нет цвета»)`);
+ok(swatches[0].classList.contains('sw-none'), 'первый образец — «нет цвета»');
+
+$('.tool-btn[data-tool="rect"]').click();
+pointer('pointerdown', 900, 200);
+pointer('pointermove', 980, 260);
+pointer('pointerup', 980, 260);
+const colorId = store.state.selection[0];
+const styleNow = () => store.state.doc.objects[colorId].style;
+
+// левый клик — заливка
+const red = swatches.find((b) => b.dataset.color === '#e53935');
+red.click();
+ok(styleNow().fill === '#e53935', `клик по образцу дал заливку ${styleNow().fill}`);
+ok(styleNow().fillType === 'solid', 'палитра ставит сплошную заливку');
+ok(red.classList.contains('is-active'), 'выбранный образец подсвечен');
+ok(window.document.getElementById('cc-fill').style.background.includes('rgb(229, 57, 53)')
+  || window.document.getElementById('cc-fill').style.background === '#e53935', 'индикатор заливки обновился');
+
+// правый клик — обводка (как в CorelDRAW)
+const blue = swatches.find((b) => b.dataset.color === '#1e88e5');
+blue.dispatchEvent(new window.MouseEvent('contextmenu', { bubbles: true, cancelable: true }));
+ok(styleNow().stroke === '#1e88e5', `правый клик задал обводку ${styleNow().stroke}`);
+
+// Shift+клик — тоже обводка
+const green = swatches.find((b) => b.dataset.color === '#43a047');
+green.dispatchEvent(new window.MouseEvent('click', { bubbles: true, shiftKey: true }));
+ok(styleNow().stroke === '#43a047', 'Shift+клик задаёт цвет обводки');
+ok(styleNow().fill === '#e53935', 'заливка при этом не изменилась');
+
+// «нет цвета» убирает заливку
+swatches[0].click();
+ok(styleNow().fill === null, 'крестик убрал заливку');
+
+// смеситель: HEX-поле и ползунки
+const hexField = window.document.getElementById('mix-hex');
+hexField.value = '#ff8800';
+hexField.dispatchEvent(new window.Event('change', { bubbles: true }));
+ok(styleNow().fill === '#ff8800', `HEX-поле применило цвет ${styleNow().fill}`);
+ok(window.document.getElementById('mix-h').value === '32', `оттенок подхватился из цвета (${window.document.getElementById('mix-h').value}°)`);
+
+$('#mix-to-stroke').click();
+ok(window.document.getElementById('mix-to-stroke').classList.contains('is-active'), 'переключатель «В обводку» активен');
+const hueSlider = window.document.getElementById('mix-h');
+hueSlider.value = '120';
+hueSlider.dispatchEvent(new window.Event('input', { bubbles: true }));
+ok(styleNow().stroke !== '#ff8800' && styleNow().stroke.startsWith('#'), `ползунок оттенка сменил обводку (${styleNow().stroke})`);
+ok(styleNow().fill === '#ff8800', 'заливка не тронута — цель была обводка');
+$('#mix-to-fill').click();
+key('z', { ctrlKey: true });
+key('z', { ctrlKey: true });
 
 console.log('экспорт (без скачивания)');
 const dxf = window.lcx.exportDxf(store.state.doc);

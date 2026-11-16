@@ -72,6 +72,98 @@ export function applyOffset(store: Store, deltaMm: number): string | null {
   return null;
 }
 
+/**
+ * PowerClip — поместить выделенные объекты внутрь контейнера.
+ *
+ * Контейнер — самый нижний объект выделения (рама рисуется первой, содержимое
+ * кладётся поверх), остальные обрезаются по его контуру. Обрезка деструктивная (Clipper, кривые становятся
+ * полилинией), поэтому исходная геометрия каждого объекта запоминается в `clip`:
+ * «Извлечь содержимое» вернёт контуры в точности как были и уберёт контейнер.
+ *
+ * @returns текст ошибки или null
+ */
+export function applyPowerClip(store: Store): string | null {
+  const objs = store.selected();
+  if (objs.length < 2) return 'Выделите контейнер и содержимое: контейнер — нижний объект в стопке';
+
+  // контейнер — самый нижний по Z-порядку среди выделенных (рамка под содержимым)
+  const order = store.state.doc.order;
+  const sorted = [...objs].sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id));
+  const container = sorted[0];
+  const content = sorted.slice(1);
+  const frame = worldOf(container);
+  if (!frame.length) return 'У контейнера нет контуров';
+
+  const gid = container.groupId ?? uid('g');
+  const patches: Patch[] = [];
+  if (!container.groupId) {
+    patches.push({ kind: 'update', before: container, after: { ...container, groupId: gid } });
+  }
+
+  let kept = 0;
+  let lost = 0;
+  for (const obj of content) {
+    const cut = booleanPaths(worldOf(obj), frame, 'intersect');
+    if (!cut.length) {
+      // объект целиком вне контейнера — прячем его внутрь как пустое содержимое
+      patches.push({ kind: 'remove', obj });
+      lost += 1;
+      continue;
+    }
+    const after: Obj = {
+      ...obj,
+      path: cut,
+      transform: { ...IDENT },
+      groupId: gid,
+      name: obj.name ?? 'Содержимое',
+      clip: obj.clip ?? { path: obj.path, transform: obj.transform, containerId: container.id },
+    };
+    patches.push({ kind: 'update', before: obj, after });
+    kept += 1;
+  }
+  if (!kept && !lost) return 'Нечего помещать внутрь';
+  store.commit({ label: 'Поместить внутрь', patches });
+  store.select([container.id, ...content.filter((o) => store.state.doc.objects[o.id]).map((o) => o.id)]);
+  if (lost && !kept) return 'Объекты целиком вне контейнера — спрятаны';
+  return null;
+}
+
+/**
+ * Извлечь содержимое PowerClip: восстановить исходную геометрию и убрать контейнер.
+ * Работает и когда выделено содержимое, и когда выделен сам контейнер.
+ *
+ * @returns текст ошибки или null
+ */
+export function releasePowerClip(store: Store): string | null {
+  const doc = store.state.doc;
+  const sel = store.selected();
+  if (!sel.length) return 'Выделите контейнер или его содержимое';
+
+  const selIds = new Set(sel.map((o) => o.id));
+  const victims = doc.order
+    .map((id) => doc.objects[id])
+    .filter((o): o is Obj => !!o && !!o.clip && (selIds.has(o.id) || selIds.has(o.clip.containerId)));
+  if (!victims.length) return 'В выделении нет содержимого PowerClip';
+
+  const patches: Patch[] = [];
+  const containerIds = new Set<Id>();
+  for (const obj of victims) {
+    const clip = obj.clip;
+    if (!clip) continue;
+    containerIds.add(clip.containerId);
+    const restored: Obj = { ...obj, path: clip.path, transform: clip.transform };
+    delete restored.clip;
+    patches.push({ kind: 'update', before: obj, after: restored });
+  }
+  for (const id of containerIds) {
+    const container = doc.objects[id];
+    if (container) patches.push({ kind: 'remove', obj: container });
+  }
+  store.commit({ label: 'Извлечь содержимое', patches });
+  store.select(victims.map((o) => o.id));
+  return null;
+}
+
 export type AlignMode = 'left' | 'hcenter' | 'right' | 'bottom' | 'vcenter' | 'top';
 
 /** Выравнивание выделения относительно листа или общего bbox. */

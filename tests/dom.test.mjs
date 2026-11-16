@@ -609,6 +609,64 @@ $('#mix-to-fill').click();
 key('z', { ctrlKey: true });
 key('z', { ctrlKey: true });
 
+console.log('PowerClip: поместить внутрь и извлечь');
+
+// контейнер 60×40 и «содержимое», которое торчит за его край
+$('.tool-btn[data-tool="rect"]').click();
+pointer('pointerdown', 200, 600);
+pointer('pointermove', 340, 690);
+pointer('pointerup', 340, 690);
+const containerId = store.state.selection[0];
+
+$('.tool-btn[data-tool="ellipse"]').click();
+pointer('pointerdown', 300, 640);
+pointer('pointermove', 440, 740);
+pointer('pointerup', 440, 740);
+const contentId = store.state.selection[0];
+
+const contentBefore = JSON.parse(JSON.stringify(store.state.doc.objects[contentId].path));
+const objectsBefore = num();
+store.select([containerId, contentId]);
+$('#pc-place').click();
+
+const afterPlace = store.state.doc.objects[contentId];
+ok(!!afterPlace && !!afterPlace.clip, 'у содержимого появилась пометка PowerClip');
+ok(afterPlace.clip.containerId === containerId, 'контейнер записан в объекте');
+ok(JSON.stringify(afterPlace.clip.path) === JSON.stringify(contentBefore), 'исходная геометрия сохранена для «Извлечь»');
+ok(num() === objectsBefore, `объекты не пропали (${num()})`);
+
+const bboxOf = (obj) => {
+  const pts = [];
+  for (const sp of obj.path) {
+    pts.push(sp.start);
+    for (const sg of sp.segs) {
+      pts.push(sg.a, sg.b);
+      if (sg.t === 'c') pts.push(sg.c1, sg.c2);
+    }
+  }
+  const m = obj.transform;
+  const xs = pts.map((p) => m.a * p.x + m.c * p.y + m.e);
+  const ys = pts.map((p) => m.b * p.x + m.d * p.y + m.f);
+  return { x: Math.min(...xs), y: Math.min(...ys), w: Math.max(...xs) - Math.min(...xs), h: Math.max(...ys) - Math.min(...ys) };
+};
+const cb = bboxOf(store.state.doc.objects[containerId]);
+const kb = bboxOf(afterPlace);
+ok(kb.x >= cb.x - 0.01 && kb.y >= cb.y - 0.01
+  && kb.x + kb.w <= cb.x + cb.w + 0.01 && kb.y + kb.h <= cb.y + cb.h + 0.01,
+  `содержимое теперь внутри контейнера (${kb.w.toFixed(1)}×${kb.h.toFixed(1)} из ${cb.w.toFixed(1)}×${cb.h.toFixed(1)})`);
+ok(window.document.querySelector('#obj-list .objrow.is-clipped') !== null, 'в списке объектов видна пометка контейнера');
+
+$('#pc-release').click();
+ok(!store.state.doc.objects[contentId].clip, 'пометка PowerClip снята');
+ok(JSON.stringify(store.state.doc.objects[contentId].path) === JSON.stringify(contentBefore), 'контуры вернулись как были');
+ok(num() === objectsBefore - 1, `контейнер удалён (${num()})`);
+
+key('z', { ctrlKey: true });
+ok(num() === objectsBefore && !!store.state.doc.objects[contentId].clip, 'undo вернул состояние «внутри контейнера»');
+key('z', { ctrlKey: true });
+key('z', { ctrlKey: true });
+key('z', { ctrlKey: true });
+
 console.log('экспорт DXF: диалог с настройками');
 
 // перехватываем файлы, которые приложение отдаёт в download()

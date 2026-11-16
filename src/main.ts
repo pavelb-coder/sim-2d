@@ -19,7 +19,7 @@ import { exportSvg } from './core/svg/write';
 import { Store } from './state/store';
 import { updateCmd } from './state/history';
 import { duplicate, nudge } from './state/edits';
-import { alignSelection, applyBoolean, applyCorners, applyOffset, distributeSelection, duplicatePattern, groupSelection, nestSelection, reorderOne, reorderSelection, setObjectFlag, transformSelection, ungroupSelection } from './state/ops';
+import { alignSelection, applyBoolean, applyCorners, applyOffset, applyTextOnPath, distributeSelection, duplicatePattern, groupSelection, nestSelection, reorderOne, reorderSelection, setObjectFlag, transformSelection, ungroupSelection } from './state/ops';
 
 import { View } from './render/view';
 import { renderScene } from './render/scene';
@@ -775,6 +775,15 @@ const actions = {
   },
   setShapeParams(p: { polySides?: number; starPoints?: number; starInner?: number }): void {
     store.setShapeParams(p);
+  },
+  textOnPath(text: string, height: number, offset: number, align: 'start' | 'center' | 'end'): void {
+    void (async () => {
+      const ok = await ensureFont();
+      if (!ok) { toast('Шрифт не загрузился — текст по контуру недоступен'); return; }
+      const err = applyTextOnPath(store, text, height, offset, align);
+      if (err) toast(err);
+      requestRender('both');
+    })();
   },
   setObjectFlag(id: string, flag: 'hidden' | 'locked', value: boolean): void {
     setObjectFlag(store, id, flag, value);

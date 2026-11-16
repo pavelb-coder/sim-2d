@@ -246,9 +246,25 @@
         <div class="field"><label for="stroke-width">Толщина, мм</label><input type="number" id="stroke-width" step="0.05" min="0" max="20" value="0.1"></div>
       </div>
       <label class="check"><input type="checkbox" id="chk-fill"> Заливка</label>
-      <div class="field-row" id="row-fill" hidden>
-        <label for="fill-color">Цвет</label><input type="color" id="fill-color" value="#bae6fd">
+      <div id="row-fill" hidden>
+        <div class="field-row">
+          <label for="fill-type">Вид</label>
+          <select id="fill-type">
+            <option value="solid">сплошная</option>
+            <option value="linear">градиент</option>
+            <option value="radial">радиальный</option>
+          </select>
+        </div>
+        <div class="field-pair">
+          <div class="field"><label for="fill-color">Цвет</label><input type="color" id="fill-color" value="#bae6fd"></div>
+          <div class="field"><label for="fill-color-2">Второй</label><input type="color" id="fill-color-2" value="#ffffff"></div>
+        </div>
+        <div class="field-row" id="row-fill-angle" hidden>
+          <label for="fill-angle">Угол, °</label>
+          <input type="number" id="fill-angle" value="0" min="-180" max="180" step="5">
+        </div>
       </div>
+      <p class="phint">Заливка и градиент видны на экране и в SVG; на резку (DXF) не влияют.</p>
     </section>
 
     <section class="pblock" id="block-text">
@@ -258,6 +274,22 @@
         <input type="number" id="text-height" value="10" min="1" max="200" step="1">
       </div>
       <p class="phint">Инструмент «Текст» ставит надпись сразу в кривых — её можно резать.</p>
+      <div class="field-row">
+        <label for="top-text">Текст по контуру</label>
+        <input type="text" id="top-text" value="Лазер" maxlength="40">
+      </div>
+      <div class="field-pair">
+        <div class="field"><label for="top-offset">Сдвиг начала, мм</label><input type="number" id="top-offset" value="0" step="0.5"></div>
+        <div class="field"><label for="top-align">Выравнивание</label>
+          <select id="top-align">
+            <option value="start">по началу</option>
+            <option value="center">по центру</option>
+            <option value="end">по концу</option>
+          </select>
+        </div>
+      </div>
+      <button class="ghost-btn wide" id="btn-text-path">Текст по контуру</button>
+      <p class="phint">Выделите контур — надпись пойдёт вдоль него, буквы повернутся по касательной. Контур остаётся на месте.</p>
     </section>
 
     <section class="pblock">

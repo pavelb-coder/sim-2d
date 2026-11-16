@@ -34,6 +34,8 @@ export interface UIActions {
   ungroup(): void;
   reorder(dir: 'front' | 'back'): void;
   nodeOp(op: NodeOp): void;
+  /** текст по контуру выделенного объекта */
+  textOnPath(text: string, height: number, offset: number, align: 'start' | 'center' | 'end'): void;
   setTextHeight(mm: number): void;
   transform(kind: 'rot90' | 'rot-90' | 'mirrorH' | 'mirrorV'): void;
   nest(all: boolean, opts: { gap: number; margin: number; allowRotate: boolean }): void;
@@ -209,16 +211,39 @@ export function initUI(store: Store, actions: UIActions): void {
   };
   $('stroke-color').addEventListener('input', (e) => applyStyle({ stroke: (e.target as HTMLInputElement).value }));
   $('stroke-width').addEventListener('change', () => applyStyle({ strokeWidth: Math.max(0, val('stroke-width')) }));
+  const syncFillRows = (): void => {
+    const on = $<HTMLInputElement>('chk-fill').checked;
+    const type = $<HTMLSelectElement>('fill-type').value;
+    $('row-fill').hidden = !on;
+    $('row-fill-angle').hidden = !on || type !== 'linear';
+  };
   $<HTMLInputElement>('chk-fill').addEventListener('change', (e) => {
     const on = (e.target as HTMLInputElement).checked;
-    applyStyle({ fill: on ? $<HTMLInputElement>('fill-color').value : null });
-    $('row-fill').hidden = !on;
+    const type = $<HTMLSelectElement>('fill-type').value as 'solid' | 'linear' | 'radial';
+    applyStyle({ fill: on ? $<HTMLInputElement>('fill-color').value : null, fillType: type });
+    syncFillRows();
+  });
+  $<HTMLSelectElement>('fill-type').addEventListener('change', (e) => {
+    const type = (e.target as HTMLSelectElement).value as 'solid' | 'linear' | 'radial';
+    if ($<HTMLInputElement>('chk-fill').checked) applyStyle({ fillType: type });
+    syncFillRows();
   });
   $('fill-color').addEventListener('input', (e) => {
     if ($<HTMLInputElement>('chk-fill').checked) applyStyle({ fill: (e.target as HTMLInputElement).value });
   });
+  $('fill-color-2').addEventListener('input', (e) => {
+    if ($<HTMLInputElement>('chk-fill').checked) applyStyle({ fill2: (e.target as HTMLInputElement).value });
+  });
+  $('fill-angle').addEventListener('change', () => applyStyle({ fillAngle: val('fill-angle') }));
+  syncFillRows();
 
   $('text-height').addEventListener('change', () => actions.setTextHeight(val('text-height')));
+  bind('btn-text-path', () => actions.textOnPath(
+    $<HTMLInputElement>('top-text').value,
+    val('text-height'),
+    val('top-offset'),
+    $<HTMLSelectElement>('top-align').value as 'start' | 'center' | 'end',
+  ));
 
   /* ---------- синхронизация ---------- */
   function sync(state: AppState): void {

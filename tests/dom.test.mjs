@@ -32,6 +32,9 @@ window.HTMLCanvasElement.prototype.getContext = function getContext() {
   const m = ctxMock();
   m.canvas = canvas;
   m.clearRect = (...args) => { clearCalls.push({ canvas, args }); };
+  const gradientStub = () => ({ addColorStop() {} });
+  m.createLinearGradient = gradientStub;
+  m.createRadialGradient = gradientStub;
   return m;
 };
 window.Element.prototype.getBoundingClientRect = function getBoundingClientRect() {
@@ -439,6 +442,53 @@ key('z', { ctrlKey: true });
 ok(store.state.doc.objects[nodeObjId].path[0].segs.filter((sg) => sg.t === 'c').length === beforeCubics,
   'undo вернул прямые отрезки');
 $('.tool-btn[data-tool="select"]').click();
+
+console.log('заливка, градиент и текст по контуру');
+
+$('.tool-btn[data-tool="rect"]').click();
+pointer('pointerdown', 700, 500);
+pointer('pointermove', 800, 560);
+pointer('pointerup', 800, 560);
+const fillId = store.state.selection[0];
+const styleOf = (id) => store.state.doc.objects[id].style;
+
+const chkFill = window.document.getElementById('chk-fill');
+chkFill.checked = true;
+chkFill.dispatchEvent(new window.Event('change', { bubbles: true }));
+ok(!!styleOf(fillId).fill, `заливка включена (${styleOf(fillId).fill})`);
+
+const fillType = window.document.getElementById('fill-type');
+fillType.value = 'linear';
+fillType.dispatchEvent(new window.Event('change', { bubbles: true }));
+ok(styleOf(fillId).fillType === 'linear', 'тип заливки — линейный градиент');
+ok(window.document.getElementById('row-fill-angle').hidden === false, 'поле угла показано для линейного градиента');
+
+const fillAngle = window.document.getElementById('fill-angle');
+fillAngle.value = '45';
+fillAngle.dispatchEvent(new window.Event('change', { bubbles: true }));
+ok(styleOf(fillId).fillAngle === 45, 'угол градиента применён');
+
+const fill2 = window.document.getElementById('fill-color-2');
+fill2.value = '#00ff00';
+fill2.dispatchEvent(new window.Event('input', { bubbles: true }));
+ok(styleOf(fillId).fill2 === '#00ff00', 'второй цвет градиента применён');
+
+const svgOut = window.lcx.exportSvg(store.state.doc);
+ok(svgOut.includes('<linearGradient'), 'в SVG появился linearGradient');
+ok(svgOut.includes('url(#grad'), 'заливка в SVG ссылается на градиент');
+
+// текст по контуру
+store.select([fillId]);
+const objCountBefore = num();
+window.document.getElementById('top-text').value = 'ОСЬ';
+window.document.getElementById('btn-text-path').click();
+await new Promise((r) => setTimeout(r, 150));
+ok(num() === objCountBefore + 1, `текст по контуру добавил объект (${objCountBefore} → ${num()})`);
+const textObjId = store.state.selection[0];
+ok(textObjId !== fillId, 'новый объект выделен');
+ok(store.state.doc.objects[textObjId].path.length >= 2, `в объекте ${store.state.doc.objects[textObjId].path.length} контуров букв`);
+key('z', { ctrlKey: true });
+ok(num() === objCountBefore, 'undo убрал текст по контуру');
 
 console.log('экспорт (без скачивания)');
 const dxf = window.lcx.exportDxf(store.state.doc);

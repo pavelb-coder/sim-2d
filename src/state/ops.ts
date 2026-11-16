@@ -6,6 +6,7 @@ import { bboxOfSubPaths, boxUnion, transformSubPaths, worldBBox } from '../core/
 import { IDENT } from '../core/geom/transform';
 import { makeObj, uid } from '../core/shape';
 import { roundCorners, type CornerMode } from '../core/geom/corners';
+import { textOnPath, type TextAlign } from '../core/textPath';
 import { addCmd, removeCmd, updateCmd, type Patch } from './history';
 import type { Store } from './store';
 
@@ -361,4 +362,40 @@ export function reorderOne(store: Store, id: Id, dir: 'up' | 'down'): void {
   if (i < 0 || j < 0 || j >= order.length) return;
   [order[i], order[j]] = [order[j], order[i]];
   store.commit({ label: dir === 'up' ? 'Выше' : 'Ниже', patches: [{ kind: 'order', before: store.state.doc.order, after: order }] });
+}
+
+/**
+ * Текст по контуру: берём первый выделенный объект как базовую линию и
+ * добавляем надпись отдельным объектом (контур остаётся на месте).
+ *
+ * @returns текст ошибки или null
+ */
+export function applyTextOnPath(
+  store: Store,
+  text: string,
+  heightMm: number,
+  offset: number,
+  align: TextAlign = 'start',
+): string | null {
+  const objs = store.selected();
+  const base = objs[0];
+  if (!base) return 'Выделите контур, по которому пустить текст';
+  if (!text.trim()) return 'Введите текст';
+
+  const world = transformSubPaths(base.path, base.transform);
+  const res = textOnPath(text, heightMm, world, { offset, align });
+  if (!res) return 'Шрифт не загрузился или у контура нет длины';
+
+  const obj = makeObj({
+    sheetId: base.sheetId,
+    layerId: base.layerId,
+    path: res.paths,
+    transform: { ...IDENT },
+    style: { ...base.style, fill: base.style.fill, fillType: base.style.fillType },
+    name: text.slice(0, 24),
+  });
+  store.commit(addCmd(obj));
+  store.select([obj.id]);
+  if (!res.fit) return 'Надпись длиннее контура — хвост вышел за его конец';
+  return null;
 }

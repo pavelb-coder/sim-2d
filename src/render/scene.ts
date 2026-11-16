@@ -3,6 +3,8 @@ import { compose } from '../core/geom/transform';
 import { theme } from './theme';
 import { View } from './view';
 import { setMatrix, toPath2D } from './path2d';
+import { bboxOfSubPaths } from '../core/geom/path';
+import { angleOf, fillTypeOf, gradientCenter, gradientLine, gradientRadius, secondColorOf } from '../core/fill';
 
 const SERIES = [0.1, 0.2, 0.5, 1, 2, 5, 10, 20, 25, 50, 100, 200, 500];
 
@@ -77,6 +79,30 @@ export function drawSheet(ctx: CanvasRenderingContext2D, sheet: Sheet, view: Vie
   ctx.restore();
 }
 
+/** Кисть заливки: сплошной цвет или градиент в координатах объекта (мм). */
+function fillPaint(ctx: CanvasRenderingContext2D, obj: Obj): string | CanvasGradient {
+  const base = obj.style.fill;
+  if (!base) return 'transparent';
+  const type = fillTypeOf(obj.style);
+  if (!type || type === 'solid') return base;
+  const box = bboxOfSubPaths(obj.path);
+  const second = secondColorOf(obj.style);
+  const stops = (gr: CanvasGradient | undefined | null): string | CanvasGradient => {
+    // окружения без градиентов (старые канвасы, тестовые заглушки) — просто цвет
+    if (!gr || typeof gr.addColorStop !== 'function') return base;
+    gr.addColorStop(0, base);
+    gr.addColorStop(1, second);
+    return gr;
+  };
+  if (type === 'linear') {
+    const { x0, y0, x1, y1 } = gradientLine(box, angleOf(obj.style));
+    return stops(typeof ctx.createLinearGradient === 'function' ? ctx.createLinearGradient(x0, y0, x1, y1) : null);
+  }
+  const c = gradientCenter(box);
+  const r = Math.max(gradientRadius(box), 1e-6);
+  return stops(typeof ctx.createRadialGradient === 'function' ? ctx.createRadialGradient(c.x, c.y, 0, c.x, c.y, r) : null);
+}
+
 export function drawObject(ctx: CanvasRenderingContext2D, obj: Obj, view: View, dpr: number, override?: { color?: string; widthPx?: number; dash?: number[] }): void {
   const m = compose(view.matrix(), obj.transform);
   ctx.save();
@@ -84,7 +110,7 @@ export function drawObject(ctx: CanvasRenderingContext2D, obj: Obj, view: View, 
   const p = toPath2D(obj.path);
   if (obj.style.fill && !override) {
     ctx.globalAlpha = obj.style.opacity;
-    ctx.fillStyle = obj.style.fill;
+    ctx.fillStyle = fillPaint(ctx, obj);
     ctx.fill(p);
     ctx.globalAlpha = 1;
   }

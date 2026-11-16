@@ -59,5 +59,5 @@ export const textTool: Tool = {
 
   up() {},
   cancel(c) { pendingPoint = null; c.setStatus(null); },
-  overlay(): ToolOverlay { return { marquee: null, snap: null, draw: null }; },
+  overlay(): ToolOverlay { return { marquee: null, snap: null, align: [], draw: null }; },
 };

@@ -276,6 +276,59 @@ window.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubble
 ok(dropZone.hidden === true, 'Esc закрывает подсказку перетаскивания');
 ok(num() === beforeDrop + 1, `файл из drop загружен (${beforeDrop} → ${num()})`);
 
+console.log('как в CorelDRAW: углы, список объектов, умные направляющие');
+
+// скругление углов выделенного прямоугольника
+key('a', { ctrlKey: true });
+const hasArcBefore = JSON.stringify(store.state.doc.objects).includes('"t":"a"');
+$('#corner-mm').value = '4';
+$('#corner-fillet').click();
+const selAfterFillet = store.selected()[0];
+const arcsAfter = selAfterFillet ? selAfterFillet.path.flatMap((sp) => sp.segs).filter((sg) => sg.t === 'a').length : 0;
+ok(arcsAfter > 0, `скругление углов добавило дуги (${arcsAfter} шт., до операции дуги были: ${hasArcBefore})`);
+
+// фаска
+$('#corner-chamfer').click();
+const selAfterChamfer = store.selected()[0];
+const linesAfter = selAfterChamfer ? selAfterChamfer.path.flatMap((sp) => sp.segs).filter((sg) => sg.t === 'l').length : 0;
+ok(linesAfter >= 8, `фаска дала срезы (${linesAfter} отрезков)`);
+key('z', { ctrlKey: true });
+key('z', { ctrlKey: true });
+
+// список объектов
+const rows = window.document.querySelectorAll('#obj-list .objrow');
+ok(rows.length === store.state.doc.order.filter((id) => store.state.doc.objects[id].sheetId === store.state.sheet.id).length,
+  `список объектов совпадает с порядком (${rows.length} строк)`);
+const firstRow = rows[0];
+const firstId = firstRow.dataset.id;
+firstRow.querySelector('[data-obj-act="select"]').click();
+ok(store.state.selection.length === 1 && store.state.selection[0] === firstId, 'клик по имени выделяет объект');
+firstRow.querySelector('[data-obj-act="eye"]').click();
+ok(store.state.doc.objects[firstId].hidden === true, 'глаз скрывает объект');
+firstRow.querySelector('[data-obj-act="eye"]').click();
+ok(store.state.doc.objects[firstId].hidden === false, 'повторный клик показывает объект');
+firstRow.querySelector('[data-obj-act="lock"]').click();
+ok(store.state.doc.objects[firstId].locked === true, 'замок блокирует объект');
+firstRow.querySelector('[data-obj-act="lock"]').click();
+// первая строка — самый верхний объект: «↑» ему недоступен, двигаем «↓»
+const orderBefore = store.state.doc.order.join(',');
+firstRow.querySelector('[data-obj-act="down"]').click();
+ok(store.state.doc.order.join(',') !== orderBefore, 'стрелка «↓» меняет порядок наложения');
+const rowsNow = window.document.querySelectorAll('#obj-list .objrow');
+rowsNow[rowsNow.length - 1].querySelector('[data-obj-act="up"]').click();
+ok(window.document.querySelector('#obj-list .objrow').dataset.id === store.state.doc.order[store.state.doc.order.length - 1],
+  'список перестроился по новому порядку');
+key('z', { ctrlKey: true });
+
+// умные направляющие
+ok(store.state.smartGuides === true, 'умные направляющие включены по умолчанию');
+const smartChk = window.document.getElementById('chk-smart');
+smartChk.checked = false;
+smartChk.dispatchEvent(new window.Event('change', { bubbles: true }));
+ok(store.state.smartGuides === false, 'тумблер отключает умные направляющие');
+smartChk.checked = true;
+smartChk.dispatchEvent(new window.Event('change', { bubbles: true }));
+
 console.log('экспорт (без скачивания)');
 const dxf = window.lcx.exportDxf(store.state.doc);
 ok(typeof dxf === 'string' && dxf.includes('AC1015') && dxf.includes('ENTITIES'), 'DXF собирается');

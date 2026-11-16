@@ -19,7 +19,7 @@ import { exportSvg } from './core/svg/write';
 import { Store } from './state/store';
 import { updateCmd } from './state/history';
 import { duplicate, nudge } from './state/edits';
-import { alignSelection, applyBoolean, applyOffset, distributeSelection, duplicatePattern, groupSelection, nestSelection, reorderSelection, transformSelection, ungroupSelection } from './state/ops';
+import { alignSelection, applyBoolean, applyCorners, applyOffset, distributeSelection, duplicatePattern, groupSelection, nestSelection, reorderOne, reorderSelection, setObjectFlag, transformSelection, ungroupSelection } from './state/ops';
 
 import { View } from './render/view';
 import { renderScene } from './render/scene';
@@ -72,6 +72,7 @@ function frame(): void {
       selection: store.state.selection,
       marquee: ov.marquee,
       snap: ov.snap,
+      align: ov.align,
       drawExtra: (ctx) => {
         ov.draw?.(ctx, view, dpr);
         if (store.state.tool === 'node') drawNodes(ctx);
@@ -699,6 +700,22 @@ const actions = {
       view.tx = view.width / 2 - issue.at.x * view.scale;
       view.ty = view.height / 2 + issue.at.y * view.scale;
     }
+    requestRender('both');
+  },
+  corners(mode: 'fillet' | 'chamfer', size: number): void {
+    const err = applyCorners(store, mode, size);
+    if (err) toast(err);
+    requestRender('both');
+  },
+  setSmartGuides(on: boolean): void {
+    store.setSmartGuides(on);
+  },
+  setObjectFlag(id: string, flag: 'hidden' | 'locked', value: boolean): void {
+    setObjectFlag(store, id, flag, value);
+    requestRender('both');
+  },
+  reorderOne(id: string, dir: 'up' | 'down'): void {
+    reorderOne(store, id, dir);
     requestRender('both');
   },
   align(mode: 'left' | 'hcenter' | 'right' | 'bottom' | 'vcenter' | 'top'): void {

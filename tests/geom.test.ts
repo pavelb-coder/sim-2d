@@ -9,6 +9,8 @@ import { setBBox, rotateTo } from '../src/state/edits';
 import { makeObj } from '../src/core/shape';
 import { applyPatches, invertPatches, addCmd, removeCmd, updateCmd } from '../src/state/history';
 import { createDoc, emptyStyle } from '../src/core/doc';
+import { roundCorners } from '../src/core/geom/corners';
+import { smartAlign } from '../src/core/smart';
 
 let passed = 0;
 function test(name: string, fn: () => void): void {
@@ -209,6 +211,85 @@ test('uid уникален на 5000 вызовов', () => {
   const set = new Set<string>();
   for (let i = 0; i < 5000; i++) set.add(uid());
   assert.equal(set.size, 5000);
+});
+
+test('скругление углов: 4 дуги, габарит и площадь не разъезжаются', () => {
+  const rect = rectPath(40, 30);
+  const rounded = roundCorners(rect, 5, 'fillet');
+  const arcs = rounded[0].segs.filter((s) => s.t === 'a');
+  assert.equal(arcs.length, 4, 'четыре скруглённых угла');
+  // дуги касательные: суммарная длина дуг = 2πr (полный круг из четырёх четвертей)
+  let arcLen = 0;
+  for (const a of arcs) if (a.t === 'a') arcLen += Math.abs(a.sweep) * a.r;
+  near(arcLen, 2 * Math.PI * 5, 1e-6);
+  const box = bboxOfSubPaths(rounded);
+  near(box.w, 40, 1e-6);
+  near(box.h, 30, 1e-6);
+  // периметр: 4 стороны минус 8 касательных отрезков плюс дуги
+  const len = pathLength(rounded, 0.01);
+  near(len, 2 * (40 + 30) - 8 * 5 + 2 * Math.PI * 5, 0.4); // допуск: контур сглажен
+});
+
+test('фаска углов: 8 отрезков, без дуг, габарит тот же', () => {
+  const rect = rectPath(40, 30);
+  const chamfered = roundCorners(rect, 5, 'chamfer');
+  const segs = chamfered[0].segs;
+  assert.equal(segs.filter((s) => s.t === 'a').length, 0, 'дуг нет');
+  assert.equal(segs.length, 8, 'четыре стороны + четыре среза');
+  const box = bboxOfSubPaths(chamfered);
+  near(box.w, 40, 1e-6);
+  near(box.h, 30, 1e-6);
+});
+
+test('скругление не трогает концы незамкнутого контура', () => {
+  const line = [{ closed: false, start: { x: 0, y: 0 }, segs: [
+    { t: 'l' as const, a: { x: 0, y: 0 }, b: { x: 20, y: 0 } },
+    { t: 'l' as const, a: { x: 20, y: 0 }, b: { x: 20, y: 20 } },
+    { t: 'l' as const, a: { x: 20, y: 20 }, b: { x: 0, y: 20 } },
+  ] }];
+  const rounded = roundCorners(line, 4, 'fillet');
+  assert.equal(rounded[0].closed, false);
+  near(rounded[0].start.x, 0); near(rounded[0].start.y, 0);
+  assert.equal(rounded[0].segs.filter((s) => s.t === 'a').length, 2, 'скруглены оба внутренних угла');
+  const last = rounded[0].segs[rounded[0].segs.length - 1];
+  near(last.b.x, 0); near(last.b.y, 20);
+});
+
+test('фаска больше половины стороны урезается, а не ломает контур', () => {
+  const rect = rectPath(10, 10);
+  const chamfered = roundCorners(rect, 100, 'chamfer');
+  const box = bboxOfSubPaths(chamfered);
+  assert.ok(box.w > 1 && box.w <= 10.001, `ширина ${box.w}`);
+  assert.ok(pathLength(chamfered) > 0);
+});
+
+test('умное выравнивание: тянем объект к левому краю соседа', () => {
+  const doc = createDoc();
+  const sheet = doc.sheets[0];
+  const a = makeObj({ sheetId: sheet.id, layerId: doc.layers[0].id, path: rectPath(20, 20), transform: { ...IDENT, e: 40, f: 40 }, style: emptyStyle(doc.layers[0]), name: 'A' });
+  const b = makeObj({ sheetId: sheet.id, layerId: doc.layers[0].id, path: rectPath(20, 20), transform: { ...IDENT, e: 100, f: 40 }, style: emptyStyle(doc.layers[0]), name: 'B' });
+  doc.objects[a.id] = a; doc.objects[b.id] = b; doc.order = [a.id, b.id];
+
+  // B сдвинут так, что его левый край на 1 мм правее левого края A
+  const box = { x: 41, y: 40, w: 20, h: 20 };
+  const res = smartAlign(box, doc, sheet, 2, new Set([b.id]));
+  near(res.dx, -1, 1e-9);
+  assert.equal(res.lines.length >= 1, true);
+  assert.equal(res.lines[0].axis, 'x');
+  near(res.lines[0].at, 40, 1e-9);
+
+  // вне допуска — выравнивания нет
+  const far = smartAlign({ x: 60, y: 5, w: 20, h: 20 }, doc, sheet, 1, new Set([b.id]));
+  assert.equal(far.dx, 0);
+  assert.equal(far.dy, 0);
+});
+
+test('умное выравнивание ловит центр листа', () => {
+  const doc = createDoc();
+  const sheet = { ...doc.sheets[0], width: 300, height: 200 };
+  const res = smartAlign({ x: 141, y: 20, w: 20, h: 20 }, doc, sheet, 2);
+  near(res.dx, -1, 1e-9); // центр 150: 141+10 = 151 → сдвиг -1
+  assert.equal(res.lines.some((l) => l.axis === 'x' && Math.abs(l.at - 150) < 1e-9), true);
 });
 
 console.log(`\n${passed} тестов пройдено`);

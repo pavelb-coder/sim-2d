@@ -119,6 +119,7 @@ export function createShapeTool(kind: ShapeKind): Tool {
       return {
         marquee: null,
         snap,
+        align: [],
         draw: preview
           ? (ctx, view, dpr) => drawObject(ctx, preview as Obj, view, dpr, { color: 'rgba(14,165,233,0.9)', widthPx: 1.6, dash: [6, 4] })
           : null,

@@ -1,5 +1,6 @@
 import type { Box, Vec2 } from '../core/types';
 import type { SnapResult } from '../core/snap';
+import type { AlignLine } from '../core/smart';
 import type { Store, ToolId } from '../state/store';
 import type { View } from '../render/view';
 
@@ -18,6 +19,8 @@ export interface ToolCtx {
 export interface ToolOverlay {
   marquee: Box | null;
   snap: SnapResult | null;
+  /** линии умного выравнивания (как Dynamic guides в CorelDRAW) */
+  align: AlignLine[];
   draw: ((ctx: CanvasRenderingContext2D, view: View, dpr: number) => void) | null;
 }
 
@@ -31,4 +34,4 @@ export interface Tool {
   overlay(): ToolOverlay;
 }
 
-export const emptyOverlay = (): ToolOverlay => ({ marquee: null, snap: null, draw: null });
+export const emptyOverlay = (): ToolOverlay => ({ marquee: null, snap: null, align: [], draw: null });

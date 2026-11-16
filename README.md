@@ -44,6 +44,7 @@
 | Текст в кривые (кириллица + латиница), шрифт DejaVu Sans встроен в сборку | ✅ |
 | Импорт DXF: LINE, LWPOLYLINE (bulge), POLYLINE/VERTEX, CIRCLE, ARC, ELLIPSE, SPLINE, INSERT, TEXT, `$INSUNITS` | ✅ |
 | Экспорт DXF: R2000 (LWPOLYLINE) и R12 (POLYLINE+VERTEX) со слоями CUT/ENGRAVE/SCORE | ✅ |
+| Диалог экспорта DXF: версия, только выделенное / весь лист / все листы, мм или дюймы, точность кривых | ✅ |
 | Импорт и экспорт SVG (mm, трансформации, дуги A, фигуры, viewBox) | ✅ |
 | Проверка перед резкой: разомкнутый контур, нулевая длина, выход за лист, дубликаты, самопересечения | ✅ |
 | Статистика: длина реза по слоям в метрах, площадь выделения | ✅ |
@@ -119,6 +120,7 @@ PORT=9000 npm run serve  # другой порт
 | `Delete` | удалить выделенное или активный узел |
 | `Esc` | отменить действие инструмента, снять выделение |
 | `Ctrl+S` | скачать проект `.lcx` |
+| `Ctrl+E` | экспорт DXF с настройками (версия, выделение, единицы, точность) |
 | `Ctrl+O` | открыть файл (DXF, SVG, `.lcx`) |
 
 Файлы можно просто перетащить в окно редактора.
@@ -129,7 +131,7 @@ PORT=9000 npm run serve  # другой порт
 
 ```bash
 npm run typecheck    # tsc --noEmit, strict
-npm test             # 31 тест геометрии + 35 тестов ядра (DXF, SVG, булевы, узлы, текст, цвет)
+npm test             # 31 тест геометрии + 36 тестов ядра (DXF, SVG, булевы, узлы, текст, цвет)
 npm run test:dom     # smoke всего приложения в jsdom (рисование, операции, диалоги, экспорт)
 npm run test:build   # собранный site/index.html грузится целиком (синтаксис бандла, старт, панели)
 npm run test:all     # всё вместе
@@ -240,13 +242,13 @@ src/
   state/                # store, history (патчи), edits, ops (булевы, выравнивание, раскладка)
   render/               # view (мм↔px), scene, overlay, handles (ручки), path2d, theme
   tools/                # select, shape, node, text, реестр инструментов
-  ui/                   # panels, panelsCollapse (докеры), palette (блок «Цвет»), dialog
+  ui/                   # panels, panelsCollapse (докеры), palette (блок «Цвет»), dxfDialog, dialog
   index.html            # разметка интерфейса
   styles.css            # оформление
   main.ts               # сборка: канвасы, DPR, события, файлы, автосейв, горячие клавиши
 tests/
   geom.test.ts          # 31 тест геометрии/истории (углы, направляющие, интервалы, ручки, узлы)
-  core.test.ts          # 35 тестов ядра (DXF/SVG, булевы, текст, текст по контуру, заливка, цвет)
+  core.test.ts          # 36 тестов ядра (DXF/SVG, булевы, текст, текст по контуру, заливка, цвет)
   fixtures/             # эталонные DXF/SVG
   dom.test.mjs          # приложение в jsdom
 assets/fonts/           # DejaVuSans-subset.ttf (латиница + кириллица + №)

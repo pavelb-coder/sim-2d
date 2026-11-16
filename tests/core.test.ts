@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 
 import { parseDxfText, tokenize } from '../src/core/dxf/tokenize';
 import { importDxf, unitScaleFromHeader } from '../src/core/dxf/import';
-import { exportDxf, slug, countDxfEntities } from '../src/core/dxf/export';
+import { exportDxf, slug, countDxfEntities, unitScale } from '../src/core/dxf/export';
 import { parseSvg, parsePathData, parseTransform, lengthToMm } from '../src/core/svg/parse';
 import { exportSvg } from '../src/core/svg/write';
 import { booleanPaths, offsetPaths, pathsArea, unionPaths } from '../src/core/geom/boolean';
@@ -553,6 +553,54 @@ test('узлы: список, перемещение, удаление, разб
 test('узлы: «в кривую» даёт кубические сегменты', () => {
   const curved = toCurve(rectPath(50, 50), { sub: 0, index: 1 });
   assert.ok(curved[0].segs.some((s) => s.t === 'c'));
+});
+
+test('экспорт DXF: только выделенное, дюймы, точность', () => {
+  const doc = createDoc();
+  const sheet = doc.sheets[0];
+  const a = makeObj({ sheetId: sheet.id, layerId: doc.layers[0].id, path: rectPath(100, 50), transform: { ...IDENT, e: 50, f: 25 }, style: emptyStyle(doc.layers[0]) });
+  const b = makeObj({ sheetId: sheet.id, layerId: doc.layers[0].id, path: rectPath(20, 20), transform: { ...IDENT, e: 150, f: 60 }, style: emptyStyle(doc.layers[0]) });
+  doc.objects[a.id] = a; doc.objects[b.id] = b; doc.order = [a.id, b.id];
+
+  const pairs = (text: string): [string, string][] => {
+    const lines = text.split(/\r?\n/);
+    const out: [string, string][] = [];
+    for (let i = 0; i + 1 < lines.length; i += 2) out.push([lines[i].trim(), lines[i + 1].trim()]);
+    return out;
+  };
+  const xs = (text: string): number[] => pairs(text).filter(([c]) => c === '10').map(([, v]) => Number(v));
+
+  assert.equal(countDxfEntities(doc), 2);
+  assert.equal(countDxfEntities(doc, sheet.id, [a.id]), 1);
+
+  const full = exportDxf(doc, { onlyIds: [a.id, b.id] });
+  const onlyA = exportDxf(doc, { onlyIds: [a.id] });
+  assert.ok(full.length > onlyA.length, 'файл выделения короче полного');
+  near(Math.max(...xs(onlyA)), 100, 1e-6);
+  near(Math.max(...xs(full)), 160, 1e-6);
+
+  // дюймы: координаты делятся на 25,4, в заголовке INSUNITS = 1
+  assert.equal(unitScale('mm'), 1);
+  near(unitScale('inch'), 1 / 25.4, 1e-12);
+  const inch = exportDxf(doc, { onlyIds: [a.id], units: 'inch' });
+  near(Math.max(...xs(inch)), 100 / 25.4, 1e-4);
+  const insunits = pairs(inch).findIndex(([c, v]) => c === '9' && v === '$INSUNITS');
+  assert.ok(insunits >= 0, 'в заголовке есть $INSUNITS');
+  assert.equal(pairs(inch)[insunits + 1][1], '1', 'INSUNITS = 1 (дюймы)');
+  const mm = exportDxf(doc, { onlyIds: [a.id] });
+  const insMm = pairs(mm).findIndex(([c, v]) => c === '9' && v === '$INSUNITS');
+  assert.equal(pairs(mm)[insMm + 1][1], '4', 'INSUNITS = 4 (мм)');
+
+  // R12 без LWPOLYLINE
+  const r12 = exportDxf(doc, { onlyIds: [a.id], version: 'R12' });
+  assert.ok(r12.includes('POLYLINE') && !r12.includes('LWPOLYLINE'), 'R12: POLYLINE вместо LWPOLYLINE');
+  // точность влияет на число вершин у кривой
+  // именно эллипс (не круг): круг уходит как CIRCLE и от допуска не зависит
+  const circle = makeObj({ sheetId: sheet.id, layerId: doc.layers[0].id, path: ellipsePath(80, 40), transform: { ...IDENT, e: 80, f: 80 }, style: emptyStyle(doc.layers[0]) });
+  doc.objects[circle.id] = circle; doc.order = [a.id, b.id, circle.id];
+  const coarse = exportDxf(doc, { onlyIds: [circle.id], tolerance: 0.5 });
+  const fine = exportDxf(doc, { onlyIds: [circle.id], tolerance: 0.005 });
+  assert.ok(fine.length > coarse.length, 'меньший допуск даёт больше точек');
 });
 
 console.log('текст');

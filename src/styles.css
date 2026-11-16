@@ -742,3 +742,9 @@ input[type="color"] {
   color: var(--accent-ink);
   background: var(--accent-soft);
 }
+
+/* объект внутри PowerClip — помечаем в списке */
+.objrow.is-clipped .objname::after {
+  content: ' ⧉';
+  color: var(--accent-ink);
+}

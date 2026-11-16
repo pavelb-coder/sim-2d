@@ -20,7 +20,7 @@ import { exportSvg } from './core/svg/write';
 import { Store } from './state/store';
 import { updateCmd } from './state/history';
 import { duplicate, nudge } from './state/edits';
-import { alignSelection, applyBoolean, applyCorners, applyOffset, applyTextOnPath, distributeSelection, duplicatePattern, groupSelection, nestSelection, reorderOne, reorderSelection, setObjectFlag, transformSelection, ungroupSelection } from './state/ops';
+import { alignSelection, applyBoolean, applyCorners, applyOffset, applyPowerClip, applyTextOnPath, releasePowerClip, distributeSelection, duplicatePattern, groupSelection, nestSelection, reorderOne, reorderSelection, setObjectFlag, transformSelection, ungroupSelection } from './state/ops';
 
 import { View } from './render/view';
 import { renderScene } from './render/scene';
@@ -810,6 +810,18 @@ const actions = {
       view.tx = view.width / 2 - issue.at.x * view.scale;
       view.ty = view.height / 2 + issue.at.y * view.scale;
     }
+    requestRender('both');
+  },
+  powerClip(): void {
+    const err = applyPowerClip(store);
+    if (err) toast(err);
+    else toast('Содержимое обрезано по контуру нижнего объекта — «Извлечь содержимое» вернёт контуры');
+    requestRender('both');
+  },
+  releasePowerClip(): void {
+    const err = releasePowerClip(store);
+    if (err) toast(err);
+    else toast('Содержимое восстановлено, контейнер удалён');
     requestRender('both');
   },
   corners(mode: 'fillet' | 'chamfer', size: number): void {

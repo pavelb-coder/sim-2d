@@ -35,6 +35,10 @@ export interface UIActions {
   ungroup(): void;
   reorder(dir: 'front' | 'back'): void;
   nodeOp(op: NodeOp): void;
+  /** PowerClip: обрезать выделенное по контуру верхнего объекта */
+  powerClip(): void;
+  /** вернуть содержимое PowerClip и убрать контейнер */
+  releasePowerClip(): void;
   /** текст по контуру выделенного объекта */
   textOnPath(text: string, height: number, offset: number, align: 'start' | 'center' | 'end'): void;
   setTextHeight(mm: number): void;
@@ -177,6 +181,8 @@ export function initUI(store: Store, actions: UIActions): void {
   bind('node-close', () => actions.nodeOp('close'));
   bind('node-break', () => actions.nodeOp('break'));
   bind('node-delete', () => actions.nodeOp('delete'));
+  bind('pc-place', () => actions.powerClip());
+  bind('pc-release', () => actions.releasePowerClip());
   bind('node-smooth', () => actions.nodeOp('smooth'));
   bind('node-symmetric', () => actions.nodeOp('symmetric'));
   bind('node-corner', () => actions.nodeOp('corner'));
@@ -384,6 +390,7 @@ export function initUI(store: Store, actions: UIActions): void {
       row.classList.toggle('is-hidden', !!obj.hidden);
       row.classList.toggle('is-locked', !!obj.locked);
       row.classList.toggle('is-selected', selection.has(obj.id));
+      row.classList.toggle('is-clipped', !!obj.clip);
       const eye = row.querySelector<HTMLButtonElement>('[data-obj-act="eye"]');
       const lock = row.querySelector<HTMLButtonElement>('[data-obj-act="lock"]');
       const name = row.querySelector<HTMLButtonElement>('[data-obj-act="select"]');

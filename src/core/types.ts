@@ -66,6 +66,11 @@ export interface ObjBase {
   hidden?: boolean;
   /** объекты одной группы выделяются вместе */
   groupId?: Id | null;
+  /**
+   * PowerClip: объект обрезан по контуру контейнера. Здесь хранится исходная
+   * геометрия, чтобы «Извлечь содержимое» вернуло контуры как было.
+   */
+  clip?: { path: SubPath[]; transform: Mat2x3; containerId: Id };
 }
 
 export type Obj = ObjBase & { kind: 'path'; path: SubPath[] };

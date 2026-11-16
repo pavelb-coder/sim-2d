@@ -11,6 +11,7 @@ import { applyPatches, invertPatches, addCmd, removeCmd, updateCmd } from '../sr
 import { createDoc, emptyStyle } from '../src/core/doc';
 import { roundCorners } from '../src/core/geom/corners';
 import { smartAlign, smartSpacing } from '../src/core/smart';
+import { moveNodes, moveNodeHandle, nodeHandles, nodesInBox, setNodeType, nodePoint } from '../src/core/geom/nodeEdit';
 import { polygonPath, starPath } from '../src/core/shape';
 import { handleAxes, anchorFor, handlePoints, hitHandle } from '../src/render/handles';
 import { View } from '../src/render/view';
@@ -369,6 +370,51 @@ test('ручки трансформации: попадание мышью и н
   // оси: 'n' двигает только Y, 'e' — только X
   assert.deepEqual(handleAxes('n'), { x: false, y: true });
   assert.deepEqual(handleAxes('e'), { x: true, y: false });
+});
+
+test('узлы 2.0: ручки Безье появляются у кривых и тянутся с зеркалом', () => {
+  const curve = setNodeType(rectPath(20, 10), { sub: 0, index: 0 }, 'smooth');
+  const handles = nodeHandles(curve, { sub: 0, index: 0 });
+  assert.equal(handles.length, 2, 'у узла замкнутого контура две ручки');
+  const before = handles.find((h) => h.side === 'out');
+  assert.ok(before);
+
+  // тянем исходящую ручку вверх — при типе smooth входящая разворачивается
+  const node = nodePoint(curve, { sub: 0, index: 0 });
+  assert.ok(node);
+  const moved = moveNodeHandle(curve, { sub: 0, index: 0 }, 'out', { x: node.x + 5, y: node.y + 5 }, 'smooth');
+  const after = nodeHandles(moved, { sub: 0, index: 0 });
+  const outH = after.find((h) => h.side === 'out');
+  const inH = after.find((h) => h.side === 'in');
+  assert.ok(outH && inH);
+  near(outH.p.x, node.x + 5, 1e-9);
+  // входящая ручка смотрит в противоположную сторону
+  assert.ok((inH.p.x - node.x) * (outH.p.x - node.x) < 0);
+
+  // symmetric выравнивает длины ручек
+  const sym = setNodeType(curve, { sub: 0, index: 0 }, 'symmetric');
+  const sh = nodeHandles(sym, { sub: 0, index: 0 });
+  const dIn = Math.hypot(sh[0].p.x - node.x, sh[0].p.y - node.y);
+  const dOut = Math.hypot(sh[1].p.x - node.x, sh[1].p.y - node.y);
+  near(dIn, dOut, 1e-9);
+});
+
+test('узлы 2.0: группа узлов двигается одной дельтой, рамка их находит', () => {
+  const path = rectPath(20, 10);
+  // все 4 узла прямоугольника лежат в рамке побольше
+  const inside = nodesInBox(path, { x: -20, y: -20, w: 40, h: 40 });
+  assert.equal(inside.length, 4);
+
+  const moved = moveNodes(path, inside, { x: 3, y: -2 });
+  const p0 = nodePoint(moved, { sub: 0, index: 0 });
+  const q0 = nodePoint(path, { sub: 0, index: 0 });
+  assert.ok(p0 && q0);
+  near(p0.x, q0.x + 3, 1e-9);
+  near(p0.y, q0.y - 2, 1e-9);
+
+  // рамка вокруг одного узла находит только его
+  const one = nodesInBox(path, { x: -11, y: 3, w: 3, h: 3 });
+  assert.equal(one.length, 1);
 });
 
 console.log(`\n${passed} тестов пройдено`);

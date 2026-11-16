@@ -412,6 +412,34 @@ ok(worldBoxOf(starObj).w > 10 && worldBoxOf(starObj).h > 10, `звезда по�
 key('z', { ctrlKey: true });
 key('z', { ctrlKey: true });
 
+console.log('редактор узлов 2.0');
+
+$('.tool-btn[data-tool="rect"]').click();
+pointer('pointerdown', 250, 500);
+pointer('pointermove', 330, 560);
+pointer('pointerup', 330, 560);
+const nodeObjId = store.state.selection[0];
+$('.tool-btn[data-tool="node"]').click();
+const nodeObj = store.state.doc.objects[nodeObjId];
+const beforeCubics = nodeObj.path[0].segs.filter((sg) => sg.t === 'c').length;
+const l0 = nodeObj.path[0].start;
+const m0 = nodeObj.transform;
+const nodePt = { x: m0.a * l0.x + m0.c * l0.y + m0.e, y: m0.b * l0.x + m0.d * l0.y + m0.f };
+// клик по узлу, затем «Гладкий»
+const nScreen = view.toScreen(nodePt);
+pointer('pointerdown', nScreen.x, nScreen.y);
+pointer('pointerup', nScreen.x, nScreen.y);
+$('#node-smooth').click();
+const smoothObj = store.state.doc.objects[nodeObjId];
+const afterCubics = smoothObj.path[0].segs.filter((sg) => sg.t === 'c').length;
+ok(afterCubics > beforeCubics, `«Гладкий» превратил соседние отрезки в кривые (${beforeCubics} → ${afterCubics})`);
+ok(window.lcx.store.state.tool === 'node', 'инструмент «Узлы» активен');
+$('#node-corner').click();
+key('z', { ctrlKey: true });
+ok(store.state.doc.objects[nodeObjId].path[0].segs.filter((sg) => sg.t === 'c').length === beforeCubics,
+  'undo вернул прямые отрезки');
+$('.tool-btn[data-tool="select"]').click();
+
 console.log('экспорт (без скачивания)');
 const dxf = window.lcx.exportDxf(store.state.doc);
 ok(typeof dxf === 'string' && dxf.includes('AC1015') && dxf.includes('ENTITIES'), 'DXF собирается');

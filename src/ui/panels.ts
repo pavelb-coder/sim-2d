@@ -9,7 +9,7 @@ import type { Issue } from '../core/validate';
 import type { Obj, Op } from '../core/types';
 
 export type ExportKind = 'dxf' | 'dxf12' | 'svg' | 'png' | 'project';
-export type NodeOp = 'curve' | 'line' | 'close' | 'break' | 'delete';
+export type NodeOp = 'curve' | 'line' | 'close' | 'break' | 'delete' | 'smooth' | 'symmetric' | 'corner';
 
 export interface UIActions {
   undo(): void;
@@ -174,6 +174,9 @@ export function initUI(store: Store, actions: UIActions): void {
   bind('node-close', () => actions.nodeOp('close'));
   bind('node-break', () => actions.nodeOp('break'));
   bind('node-delete', () => actions.nodeOp('delete'));
+  bind('node-smooth', () => actions.nodeOp('smooth'));
+  bind('node-symmetric', () => actions.nodeOp('symmetric'));
+  bind('node-corner', () => actions.nodeOp('corner'));
 
   /* ---------- поворот и зеркало ---------- */
   $('tr-rot90').addEventListener('click', () => actions.transform('rot90'));

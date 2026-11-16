@@ -46,6 +46,8 @@ export interface UIActions {
   setMaterial(patch: Partial<Material>): void;
   /** учесть рез в геометрии контуров слоя реза */
   applyKerf(): void;
+  /** «В кривые»: запечь матрицу и заменить дуги кривыми (Ctrl+Q) */
+  toCurves(): void;
   /** текст по контуру выделенного объекта */
   textOnPath(text: string, height: number, offset: number, align: 'start' | 'center' | 'end'): void;
   setTextHeight(mm: number): void;
@@ -271,6 +273,8 @@ export function initUI(store: Store, actions: UIActions): void {
       return { fill: objs[0].style.fill, stroke: objs[0].style.stroke };
     },
   });
+
+  bind('obj-curves', () => actions.toCurves());
 
   /* ---------- блок «Материал и рез» ---------- */
   const matSel = $<HTMLSelectElement>('mat-preset');

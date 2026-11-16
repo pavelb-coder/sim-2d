@@ -17,6 +17,8 @@ import { handleAxes, anchorFor, handlePoints, hitHandle } from '../src/render/ha
 import { View } from '../src/render/view';
 import { compensateKerf, kerfOffset, materialOf, defaultMaterial, MATERIAL_PRESETS, presetById } from '../src/core/geom/kerf';
 import { pathsArea } from '../src/core/geom/boolean';
+import { arcsToCubics, hasArcs, isCurve, isIdentityMatrix, toCurves } from '../src/core/geom/curves';
+import { rotate as rotateM, translate as translateM, compose as composeM } from '../src/core/geom/transform';
 
 let passed = 0;
 function test(name: string, fn: () => void): void {
@@ -541,6 +543,50 @@ test('компенсация реза: нулевой рез и разомкну
   const open = mixed.filter((sp) => !sp.closed);
   assert.equal(open.length, 1, 'разомкнутый контур сохранился');
   assert.equal(open[0].segs[0].t, 'l');
+});
+
+test('в кривые: дуги становятся кубическими Безье без потери геометрии', () => {
+  const circle = ellipsePath(100, 100);
+  assert.ok(hasArcs(circle), 'эллипс собран из дуг');
+  const curves = arcsToCubics(circle);
+  assert.ok(!hasArcs(curves), 'дуг не осталось');
+  assert.equal(curves[0].segs.length, 4, 'круг — четыре кривые, как в Corel');
+
+  // габарит и периметр сохраняются (дуга 90° приближается Безье с точностью < 0,001 мм)
+  const before = bboxOfSubPaths(circle), after = bboxOfSubPaths(curves);
+  near(after.w, before.w, 1e-6);
+  near(after.h, before.h, 1e-6);
+  near(after.x, before.x, 1e-6);
+  // четыре кривые приближают круг с классической ошибкой ~0,027 % (0,09 мм на R50)
+  assert.ok(Math.abs(pathLength(curves) - pathLength(circle)) < 0.15, 'периметр сошёлся');
+  const areaCurve = Math.abs(pathsArea(curves));
+  assert.ok(Math.abs(areaCurve - Math.PI * 2500) < 3, `площадь ${areaCurve.toFixed(2)}`);
+});
+
+test('в кривые: матрица запекается, объект остаётся на месте', () => {
+  const m = composeM(translateM(120, 80), rotateM(Math.PI / 6));
+  const obj = makeObj({
+    sheetId: 's', layerId: 'l',
+    path: rectPath(100, 60),
+    transform: m,
+    style: { fill: null, stroke: '#000', strokeWidth: 0.2, opacity: 1 },
+  });
+  assert.equal(isCurve(obj), false, 'до преобразования объект не кривая');
+  const worldBefore = worldBBox(obj.path, obj.transform);
+
+  const conv = toCurves(obj);
+  assert.ok(isIdentityMatrix(conv.transform), 'матрица стала единичной');
+  assert.equal(isCurve(conv), true);
+  const worldAfter = bboxOfSubPaths(conv.path);
+  near(worldAfter.x, worldBefore.x, 1e-6);
+  near(worldAfter.y, worldBefore.y, 1e-6);
+  near(worldAfter.w, worldBefore.w, 1e-6);
+  near(worldAfter.h, worldBefore.h, 1e-6);
+
+  // повторное «в кривые» ничего не делает: объект уже кривая
+  assert.equal(isCurve(toCurves(conv)), true, 'операция идемпотентна');
+  assert.equal(conv.id, obj.id, 'id и стиль сохраняются');
+  assert.equal(conv.style.strokeWidth, 0.2);
 });
 
 console.log(`\n${passed} тестов пройдено`);

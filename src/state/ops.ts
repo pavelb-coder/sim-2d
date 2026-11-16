@@ -10,6 +10,7 @@ import { roundCorners, type CornerMode } from '../core/geom/corners';
 import { textOnPath, type TextAlign } from '../core/textPath';
 import { addCmd, removeCmd, updateCmd, type Patch } from './history';
 import { compensateKerf, materialOf } from '../core/geom/kerf';
+import { isCurve, toCurves } from '../core/geom/curves';
 import type { Store } from './store';
 
 const worldOf = (obj: Obj): SubPath[] => transformSubPaths(obj.path, obj.transform);
@@ -71,6 +72,24 @@ export function applyOffset(store: Store, deltaMm: number): string | null {
   }
   store.commit({ label: deltaMm > 0 ? 'Контур наружу' : 'Контур внутрь', patches });
   void skipped;
+  return null;
+}
+
+/**
+ * «В кривые» (Ctrl+Q, как в CorelDRAW): запечь матрицу объекта в контуры
+ * и превратить дуги в кубические Безье. Работает по выделению; объекты,
+ * которые уже кривые, пропускаются — если таких нет, вернётся ошибка-подсказка.
+ */
+export function convertToCurves(store: Store): string | null {
+  const objs = store.selected();
+  if (!objs.length) return 'Выделите объект — «В кривые» работает с выделением';
+  const patches: Patch[] = [];
+  for (const obj of objs) {
+    if (isCurve(obj)) continue;
+    patches.push({ kind: 'update', before: obj, after: toCurves(obj) });
+  }
+  if (!patches.length) return 'Уже кривые: масштаб и поворот не применены, дуг нет';
+  store.commit({ label: 'В кривые', patches });
   return null;
 }
 

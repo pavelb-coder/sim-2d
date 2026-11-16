@@ -22,7 +22,7 @@ import { Store } from './state/store';
 import type { Material } from './core/types';
 import { updateCmd } from './state/history';
 import { duplicate, nudge } from './state/edits';
-import { alignSelection, applyBoolean, applyCorners, applyKerf as applyKerfOp, applyOffset, applyPowerClip, applyTextOnPath, releasePowerClip, distributeSelection, duplicatePattern, groupSelection, nestSelection, reorderOne, reorderSelection, setObjectFlag, transformSelection, ungroupSelection } from './state/ops';
+import { alignSelection, applyBoolean, applyCorners, applyKerf as applyKerfOp, applyOffset, applyPowerClip, convertToCurves, applyTextOnPath, releasePowerClip, distributeSelection, duplicatePattern, groupSelection, nestSelection, reorderOne, reorderSelection, setObjectFlag, transformSelection, ungroupSelection } from './state/ops';
 
 import { View } from './render/view';
 import { renderScene } from './render/scene';
@@ -750,7 +750,13 @@ window.addEventListener('keydown', (e) => {
   if (mod && key === 's') { e.preventDefault(); exportAs('project'); return; }
   if (mod && key === 'e') { e.preventDefault(); exportAs('dxf-settings'); return; }
   if (mod && key === 'o') { e.preventDefault(); pickFile(); return; }
-  if (mod && key === 'q') { e.preventDefault(); nodeToolOp('curve'); return; }
+  if (mod && key === 'q') {
+    e.preventDefault();
+    // в инструменте «Узлы» — превратить сегмент в кривую, иначе — объект «в кривые»
+    if (store.state.tool === 'node') nodeToolOp('curve');
+    else actions.toCurves();
+    return;
+  }
   if (mod && key === 'g') { e.preventDefault(); if (e.shiftKey) actions.ungroup(); else actions.group(); return; }
   if (mod && key === 'a') {
     e.preventDefault();
@@ -875,6 +881,13 @@ const actions = {
     const err = applyPowerClip(store);
     if (err) toast(err);
     else toast('Содержимое обрезано по контуру нижнего объекта — «Извлечь содержимое» вернёт контуры');
+    requestRender('both');
+  },
+  toCurves(): void {
+    const had = store.state.selection.length;
+    const err = convertToCurves(store);
+    if (err) { toast(err); return; }
+    toast(`В кривые: ${had} объект(ов) — масштаб и поворот запечены, дуги стали кривыми`);
     requestRender('both');
   },
   setMaterial(patch: Partial<Material>): void {

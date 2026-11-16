@@ -81,7 +81,11 @@ try {
 /* ---------- запуск приложения ---------- */
 const errors = [];
 window.addEventListener('error', (e) => errors.push(String(e.message)));
-process.on('uncaughtException', (e) => errors.push(String(e)));
+process.on('uncaughtException', (e) => {
+  // не глотаем фатальные ошибки молча: без этого падение при старте выглядело как «пустой» тест
+  console.error('  ! uncaught:', String(e));
+  errors.push(String(e));
+});
 
 await import('./_main.mjs');
 
@@ -684,6 +688,88 @@ ok(JSON.stringify(afterNudgeObj.transform) === JSON.stringify(beforeNudgeObj.tra
 key('z', { ctrlKey: true });
 key('z', { ctrlKey: true });
 key('z', { ctrlKey: true });
+$('.tool-btn[data-tool="select"]').click();
+
+console.log('в кривые (Ctrl+Q)');
+
+// прямоугольник, повёрнутый на 90°: матрица «держит» поворот
+$('.tool-btn[data-tool="rect"]').click();
+pointer('pointerdown', 300, 620);
+pointer('pointermove', 420, 700);
+pointer('pointerup', 420, 700);
+const cvObjId = store.state.selection[0];
+$('#tr-rot90').click();
+const cvRotated = store.state.doc.objects[cvObjId];
+// точки сегмента, включая крайние точки дуги (иначе у круга из дуг высота выйдет нулевой)
+const cvSegPts = (sg) => {
+  if ('c1' in sg) return [sg.a, sg.c1, sg.c2, sg.b];
+  if (sg.t === 'a') {
+    const out = [sg.a, sg.b];
+    const norm = (v) => { let x = v; while (x > Math.PI) x -= 2 * Math.PI; while (x <= -Math.PI) x += 2 * Math.PI; return x; };
+    for (const ang of [0, Math.PI / 2, Math.PI, -Math.PI / 2]) {
+      const d = norm(ang - sg.a0);
+      const inside = sg.sweep >= 0 ? d >= 0 && d <= sg.sweep : d <= 0 && d >= sg.sweep;
+      if (inside) out.push({ x: sg.center.x + sg.r * Math.cos(ang), y: sg.center.y + sg.r * Math.sin(ang) });
+    }
+    return out;
+  }
+  return [sg.a, sg.b];
+};
+const cvWorldBox = (o) => {
+  const xs = [], ys = [];
+  for (const sp of o.path) {
+    const pts = [sp.start, ...sp.segs.flatMap(cvSegPts)];
+    for (const p of pts) {
+      xs.push(o.transform.a * p.x + o.transform.c * p.y + o.transform.e);
+      ys.push(o.transform.b * p.x + o.transform.d * p.y + o.transform.f);
+    }
+  }
+  return { x: Math.min(...xs), y: Math.min(...ys), w: Math.max(...xs) - Math.min(...xs), h: Math.max(...ys) - Math.min(...ys) };
+};
+const cvBoxBefore = cvWorldBox(cvRotated);
+ok(Math.abs(cvRotated.transform.a) < 1e-9 || Math.abs(cvRotated.transform.b) > 1e-9, 'после поворота матрица не единичная');
+
+$('#obj-curves').click();
+const cvObj = store.state.doc.objects[cvObjId];
+ok(Math.abs(cvObj.transform.a - 1) < 1e-9 && Math.abs(cvObj.transform.b) < 1e-9 && Math.abs(cvObj.transform.c) < 1e-9 && Math.abs(cvObj.transform.d - 1) < 1e-9,
+  'матрица запечена: объект стал единичной кривой');
+const cvBoxAfter = cvWorldBox(cvObj);
+ok(Math.abs(cvBoxAfter.w - cvBoxBefore.w) < 1e-6 && Math.abs(cvBoxAfter.h - cvBoxBefore.h) < 1e-6 && Math.abs(cvBoxAfter.x - cvBoxBefore.x) < 1e-6,
+  'габарит и положение не изменились');
+ok(store.state.selection[0] === cvObjId, 'объект остался выделен');
+
+// повторное нажатие ничего не делает и не пишет в историю
+const cvUndoBefore = store.history.canUndo;
+$('#obj-curves').click();
+ok(store.history.canUndo === cvUndoBefore, 'повторное «в кривые» не создаёт шага истории');
+key('z', { ctrlKey: true });
+ok(Math.abs(store.state.doc.objects[cvObjId].transform.a - cvRotated.transform.a) < 1e-9, 'undo вернул исходную матрицу');
+
+// круг построен дугами: Ctrl+Q делает из него 4 кривые.
+// привязки на время рисования выключаем — иначе прилипание к сетке сделает из круга эллипс
+const snapGridChk = $('#chk-snap-grid');
+const snapObjChk = $('#chk-snap-obj');
+const wasGrid = snapGridChk.checked, wasObj = snapObjChk.checked;
+snapGridChk.checked = false; snapGridChk.dispatchEvent(new window.Event('change', { bubbles: true }));
+snapObjChk.checked = false; snapObjChk.dispatchEvent(new window.Event('change', { bubbles: true }));
+$('.tool-btn[data-tool="ellipse"]').click();
+pointer('pointerdown', 900, 300);
+pointer('pointermove', 980, 380);
+pointer('pointerup', 980, 380);
+snapGridChk.checked = wasGrid; snapGridChk.dispatchEvent(new window.Event('change', { bubbles: true }));
+snapObjChk.checked = wasObj; snapObjChk.dispatchEvent(new window.Event('change', { bubbles: true }));
+const ellId = store.state.selection[0];
+ok(store.state.doc.objects[ellId].path[0].segs.some((s) => s.t === 'a'), 'эллипс построен из дуг');
+const ellBefore = cvWorldBox(store.state.doc.objects[ellId]);
+key('q', { ctrlKey: true });
+const ell = store.state.doc.objects[ellId];
+ok(!ell.path[0].segs.some((s) => s.t === 'a'), 'Ctrl+Q превратил дуги в кривые');
+ok(ell.path[0].segs.length === 4, 'круг — четыре кривые Безье, как в Corel');
+const ellAfter = cvWorldBox(ell);
+ok(Math.abs(ellAfter.w - ellBefore.w) < 1e-3 && Math.abs(ellAfter.h - ellBefore.h) < 1e-3,
+  `эллипс не деформировался (${ellBefore.w.toFixed(6)}×${ellBefore.h.toFixed(6)} → ${ellAfter.w.toFixed(6)}×${ellAfter.h.toFixed(6)})`);
+key('z', { ctrlKey: true });
+
 $('.tool-btn[data-tool="select"]').click();
 
 console.log('материал и компенсация реза');

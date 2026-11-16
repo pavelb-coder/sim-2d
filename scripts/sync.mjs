@@ -4,9 +4,9 @@
  *   npm run sync                     # авто-сообщение коммита
  *   npm run sync -- "текст коммита"  # своё сообщение
  *
- * Пушится та ветка, в которой вы работаете:
- *   • в main   → после пуша обновляются зеркальные ветки (в них вливается main);
- *   • в зеркале → в него подтягивается свежий main, если он ушёл вперёд.
+ * Порядок всегда один и тот же — СНАЧАЛА main, ПОТОМ ветка Moodle:
+ *   • работаете в main   → 1) пуш main, 2) вливание main в зеркала и их пуш;
+ *   • работаете в зеркале → 1) подтягиваем свежий main, 2) пуш зеркала.
  * Список зеркал — GIT_MIRROR_BRANCHES в .env.local (по умолчанию "moodle-plugin"),
  * поэтому ветка с плагином Moodle никогда не отстаёт от main и наоборот.
  * Так правки плагина не «протекают» в main, а main остаётся чистым редактором.
@@ -98,6 +98,7 @@ function syncMirror(mirror, pushUrl, mainBranch) {
   }
 
   run(['push', pushUrl, `${mirror}:${mirror}`], { stdio: ['ignore', 'pipe', 'pipe'] });
+  tryRun(['update-ref', tracking, 'HEAD']);
   return `обновлена: влито ${behind} коммит(ов) из ${mainBranch}, HEAD ${run(['rev-parse', '--short', 'HEAD'])}`;
 }
 
@@ -130,75 +131,104 @@ try {
   const target = startBranch === 'HEAD' ? branch : startBranch;
   const isMirrorBranch = target !== branch && mirrors.includes(target);
 
+  // ---------------------------------------------------------------- коммит
   run(['add', '-A']);
   const staged = run(['diff', '--cached', '--name-only']);
-  let pushed = false;
+  let committed = false;
   if (staged) {
     const files = staged.split('\n').length;
     const msg = process.argv.slice(2).join(' ') || `sync: ${new Date().toISOString().slice(0, 16).replace('T', ' ')}`;
     run(['commit', '-m', msg]);
     console.log(`Коммит: ${msg}  (${files} файл(ов))`);
-    pushed = true;
-  } else {
-    const ahead = Number(tryRun(['rev-list', '--count', `origin/${target}..HEAD`]) || 0);
-    if (ahead > 0) {
-      console.log(`Незапушенных коммитов: ${ahead} — отправляю.`);
-      pushed = true;
+    committed = true;
+  }
+
+  /** Вливает ref в текущую ветку, если он ушёл вперёд. Возвращает число коммитов. */
+  const mergeIfBehind = (ref, message) => {
+    const behind = Number(tryRun(['rev-list', '--count', `HEAD..${ref}`]) || 0);
+    if (behind === 0) return 0;
+    try {
+      run(['merge', '-q', '--no-edit', '-m', `chore(sync): ${message}`, ref]);
+    } catch {
+      tryRun(['merge', '--abort']);
+      throw new Error(`конфликт при слиянии ${ref} — разрешите вручную, ничего не отправлено`);
     }
-  }
+    return behind;
+  };
 
-  if (pushed) {
-    run(['push', pushUrl, `HEAD:${target}`], { stdio: ['ignore', 'pipe', 'pipe'] });
-    console.log(`Отправлено в ${repo} → ${target}: ${run(['rev-parse', '--short', 'HEAD'])}`);
-  } else if (!isMirrorBranch) {
-    console.log('Нечего синхронизировать: рабочее дерево чистое, локальных коммитов нет.');
-  }
+  /** Обновляет локальную ссылку на ветку GitHub. */
+  const fetchBranch = (name) =>
+    attempt(['fetch', pushUrl, `+refs/heads/${name}:refs/remotes/origin/${name}`],
+      { stdio: ['ignore', 'pipe', 'pipe'] });
 
-  if (isMirrorBranch) {
-    // Работаем в ветке-зеркале: подтягиваем в неё main, если он ушёл вперёд.
-    const tracking = 'refs/remotes/origin/main';
-    attempt(['fetch', pushUrl, `+refs/heads/${branch}:${tracking}`], { stdio: ['ignore', 'pipe', 'pipe'] });
-    const behind = Number(tryRun(['rev-list', '--count', `HEAD..${tracking}`]) || 0);
-    if (behind === 0) {
-      console.log(`Ветка ${target}: main уже влит, всё актуально.`);
+  const pushBranch = (name) => {
+    run(['push', pushUrl, `HEAD:${name}`], { stdio: ['ignore', 'pipe', 'pipe'] });
+    // свои же пуш идёт по URL, поэтому ссылка origin/* сама не обновится
+    tryRun(['update-ref', `refs/remotes/origin/${name}`, 'HEAD']);
+    return run(['rev-parse', '--short', 'HEAD']);
+  };
+
+  // ------------------------------------------- 1. СНАЧАЛА main, потом зеркала
+  if (!isMirrorBranch) {
+    const ahead = committed
+      ? 1
+      : Number(tryRun(['rev-list', '--count', `origin/${branch}..HEAD`]) || 0);
+    if (ahead > 0) {
+      console.log(`1) ${branch}: отправляю ${pushBranch(branch)}`);
     } else {
+      console.log(`1) ${branch}: нечего отправлять, ветка актуальна`);
+    }
+
+    const mirrorReports = [];
+    const mirrorErrors = [];
+    for (const mirror of mirrors) {
+      if (mirror === branch) continue;
       try {
-        run(['merge', '-q', '--no-edit', '-m', `chore(sync): ${branch} → ${target}`, tracking]);
-        run(['push', pushUrl, `HEAD:${target}`], { stdio: ['ignore', 'pipe', 'pipe'] });
-        console.log(`Ветка ${target}: влито ${behind} коммит(ов) из ${branch}, HEAD ${run(['rev-parse', '--short', 'HEAD'])}`);
+        mirrorReports.push(`${mirror}: ${syncMirror(mirror, pushUrl, branch)}`);
       } catch (err) {
-        tryRun(['merge', '--abort']);
-        throw new Error(`конфликт при слиянии ${branch} в ${target}: разрешите вручную`);
+        mirrorErrors.push(`${mirror}: ${mask(`${err?.stderr ?? ''}${err?.message ?? err}`).trim()}`);
+      } finally {
+        if (run(['rev-parse', '--abbrev-ref', 'HEAD']) !== startBranch) {
+          tryRun(['checkout', '-q', startBranch]);
+        }
       }
+    }
+    for (const line of mirrorReports) {
+      console.log(`2) зеркало ${line}`);
+    }
+    if (mirrorErrors.length) {
+      for (const line of mirrorErrors) {
+        console.error(`2) зеркало не обновлено — ${line}`);
+      }
+      process.exit(1);
     }
     process.exit(0);
   }
 
-  // 2. Зеркальные ветки: всегда подтягиваем к свежему main
-  const mirrorReports = [];
-  const mirrorErrors = [];
-  for (const mirror of mirrors) {
-    if (mirror === branch) continue;
-    try {
-      mirrorReports.push(`${mirror}: ${syncMirror(mirror, pushUrl, branch)}`);
-    } catch (err) {
-      mirrorErrors.push(`${mirror}: ${mask(`${err?.stderr ?? ''}${err?.message ?? err}`).trim()}`);
-    } finally {
-      // возвращаемся туда, где были: работа продолжается в основной ветке
-      if (run(['rev-parse', '--abbrev-ref', 'HEAD']) !== startBranch) {
-        tryRun(['checkout', '-q', startBranch]);
-      }
-    }
+  // Работаем в зеркальной ветке: тот же порядок — свежий main, затем своя ветка.
+  fetchBranch(target);
+  mergeIfBehind(`origin/${target}`, `подтягиваю ${target} с GitHub`);
+
+  const mainFetched = fetchBranch(branch);
+  const mainMerged = mainFetched ? mergeIfBehind(`origin/${branch}`, `${branch} → ${target}`) : 0;
+  if (!mainFetched) {
+    console.warn(`! ${branch} не удалось получить с GitHub — обновляю только ${target}`);
+  } else if (mainMerged > 0) {
+    console.log(`1) ${branch}: подтянут, влито ${mainMerged} коммит(ов)`);
+  } else {
+    console.log(`1) ${branch}: новых коммитов нет`);
   }
-  for (const line of mirrorReports) {
-    console.log(`Зеркало ${line}`);
+
+  const ahead = committed
+    ? 1
+    : Number(tryRun(['rev-list', '--count', `origin/${target}..HEAD`]) || 0);
+
+  if (ahead > 0) {
+    console.log(`2) ${target}: отправлено ${pushBranch(target)}`);
+  } else {
+    console.log(`2) ${target}: нечего отправлять, ветка актуальна`);
   }
-  if (mirrorErrors.length) {
-    for (const line of mirrorErrors) {
-      console.error(`Зеркало не обновлено — ${line}`);
-    }
-    process.exit(1);
-  }
+  process.exit(0);
 } catch (err) {
   const text = `${err?.stderr ?? ''}${err?.message ?? err}`;
   console.error('Ошибка синхронизации:', mask(text));

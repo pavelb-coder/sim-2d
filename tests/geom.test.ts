@@ -11,7 +11,7 @@ import { applyPatches, invertPatches, addCmd, removeCmd, updateCmd } from '../sr
 import { createDoc, emptyStyle } from '../src/core/doc';
 import { roundCorners } from '../src/core/geom/corners';
 import { smartAlign, smartSpacing } from '../src/core/smart';
-import { moveNodes, moveNodeHandle, nodeHandles, nodesInBox, setNodeType, nodePoint } from '../src/core/geom/nodeEdit';
+import { moveNodes, moveNodeHandle, nodeHandles, nodesInBox, setNodeType, nodePoint, nodeTypeAt, moveSegment, joinNodes, reverseSubPath, alignNodes, nearestSegment } from '../src/core/geom/nodeEdit';
 import { polygonPath, starPath } from '../src/core/shape';
 import { handleAxes, anchorFor, handlePoints, hitHandle } from '../src/render/handles';
 import { View } from '../src/render/view';
@@ -415,6 +415,76 @@ test('узлы 2.0: группа узлов двигается одной дел
   // рамка вокруг одного узла находит только его
   const one = nodesInBox(path, { x: -11, y: 3, w: 3, h: 3 });
   assert.equal(one.length, 1);
+});
+
+test('узлы 3.0: тип узла по геометрии (квадрат/круг/ромб)', () => {
+  const rect = rectPath(20, 10);
+  assert.equal(nodeTypeAt(rect, { sub: 0, index: 0 }), 'corner', 'у прямоугольника угловые узлы');
+  const smooth = setNodeType(rect, { sub: 0, index: 0 }, 'smooth');
+  assert.equal(nodeTypeAt(smooth, { sub: 0, index: 0 }), 'smooth');
+  const sym = setNodeType(rect, { sub: 0, index: 0 }, 'symmetric');
+  assert.equal(nodeTypeAt(sym, { sub: 0, index: 0 }), 'symmetric');
+  // потянули одну ручку без зеркала — снова излом
+  const node = nodePoint(sym, { sub: 0, index: 0 });
+  assert.ok(node);
+  const broken = moveNodeHandle(sym, { sub: 0, index: 0 }, 'out', { x: node.x + 7, y: node.y + 1 }, 'corner');
+  assert.equal(nodeTypeAt(broken, { sub: 0, index: 0 }), 'corner');
+});
+
+test('узлы 3.0: перетаскивание сегмента двигает оба его узла', () => {
+  const rect = rectPath(20, 10);
+  const before = bboxOfSubPaths(rect);
+  const moved = moveSegment(rect, { sub: 0, index: 0 }, { x: 5, y: 3 });
+  const after = bboxOfSubPaths(moved);
+  // сегмент 0 — нижняя сторона: сдвинулись только её два узла
+  assert.ok(Math.abs(after.y - (before.y + 3)) < 1e-9, `низ поднялся на 3 мм (${before.y} → ${after.y})`);
+  assert.ok(Math.abs(after.h - (before.h - 3)) < 1e-9, 'высота уменьшилась на 3 мм');
+  const p0 = nodePoint(moved, { sub: 0, index: 1 });
+  const q0 = nodePoint(rect, { sub: 0, index: 1 });
+  assert.ok(p0 && q0);
+  near(p0.y, q0.y + 3, 1e-9);
+  // верхние узлы остались на месте
+  const top = nodePoint(moved, { sub: 0, index: 2 });
+  const topOld = nodePoint(rect, { sub: 0, index: 2 });
+  assert.ok(top && topOld);
+  near(top.x, topOld.x, 1e-9);
+  near(top.y, topOld.y, 1e-9);
+  // поиск сегмента под точкой
+  const seg = nearestSegment(rect, { x: 0, y: -5 }, 0.5);
+  assert.ok(seg, 'сегмент найден под точкой');
+  assert.equal(seg!.sub, 0);
+});
+
+test('узлы 3.0: соединение концов, реверс и выравнивание узлов', () => {
+  const a = linePath(10)[0];              // открытый: −5…5 по X
+  const b: typeof a = {
+    closed: false,
+    start: { x: 20, y: 10 },
+    segs: [{ t: 'l', a: { x: 20, y: 10 }, b: { x: 30, y: 10 } }],
+  };
+  const joined = joinNodes([a, b], { sub: 0, index: 1 }, { sub: 1, index: 0 });
+  assert.ok(joined, 'два открытых подпути склеились');
+  assert.equal(joined!.length, 1, 'остался один подпуть');
+  assert.equal(joined![0].segs.length, 3, 'два исходных отрезка + соединяющий мостик');
+  assert.equal(joined![0].closed, false, 'склеенный подпуть остался открытым');
+
+  // замыкание одного подпути по двум его концам
+  const closed = joinNodes([a], { sub: 0, index: 0 }, { sub: 0, index: 1 });
+  assert.ok(closed && closed[0].closed, 'подпуть замкнулся');
+
+  // реверс: направление меняется, концевые точки местами
+  const rev = reverseSubPath([a], 0);
+  assert.ok(Math.abs(rev[0].start.x - 5) < 1e-9 || Math.abs(rev[0].start.x + 5) < 1e-9);
+  const back = reverseSubPath(rev, 0);
+  assert.ok(Math.abs(back[0].start.x - a.start.x) < 1e-9, 'двойной реверс возвращает старт');
+
+  // выравнивание узлов по X
+  const rect = rectPath(20, 10);
+  const aligned = alignNodes(rect, [{ sub: 0, index: 0 }, { sub: 0, index: 1 }], 'x');
+  const p1 = nodePoint(aligned, { sub: 0, index: 0 });
+  const p2 = nodePoint(aligned, { sub: 0, index: 1 });
+  assert.ok(p1 && p2);
+  near(p1.x, p2.x, 1e-9);
 });
 
 console.log(`\n${passed} тестов пройдено`);

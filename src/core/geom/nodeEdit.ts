@@ -1,6 +1,7 @@
 import type { Seg, SubPath, Vec2 } from '../types';
 import { arcToCubics } from './arc';
 import { dist } from './vec';
+import { nearestOnPath } from './path';
 
 export interface NodeRef { sub: number; index: number }
 export interface PathNode { ref: NodeRef; p: Vec2; closed: boolean; subStart: boolean }
@@ -351,4 +352,138 @@ export function nodesInBox(path: SubPath[], box: { x: number; y: number; w: numb
   return pathNodes(path)
     .filter((n) => n.p.x >= box.x && n.p.x <= box.x + box.w && n.p.y >= box.y && n.p.y <= box.y + box.h)
     .map((n) => n.ref);
+}
+
+/* ---------- редактор узлов 3.0: сегменты, соединение, реверс, выравнивание ---------- */
+
+export interface SegRef { sub: number; index: number }
+
+/** Тип узла «по геометрии» — как показывает CorelDRAW разными маркерами. */
+export function nodeTypeAt(path: SubPath[], ref: NodeRef): NodeType {
+  const handles = nodeHandles(path, ref);
+  if (handles.length < 2) return 'corner';
+  const node = nodePoint(path, ref);
+  if (!node) return 'corner';
+  const inH = handles.find((h) => h.side === 'in');
+  const outH = handles.find((h) => h.side === 'out');
+  if (!inH || !outH) return 'corner';
+  const vi = { x: node.x - inH.p.x, y: node.y - inH.p.y }; // от ручки к узлу
+  const vo = { x: outH.p.x - node.x, y: outH.p.y - node.y };
+  const li = Math.hypot(vi.x, vi.y);
+  const lo = Math.hypot(vo.x, vo.y);
+  if (li < 1e-9 || lo < 1e-9) return 'corner';
+  const cross = (vi.x / li) * (vo.y / lo) - (vi.y / li) * (vo.x / lo);
+  const dot = (vi.x / li) * (vo.x / lo) + (vi.y / li) * (vo.y / lo);
+  // ручки не на одной прямой — излом
+  if (Math.abs(cross) > 1e-3 || dot < -0.999) return 'corner';
+  const aligned = Math.abs(cross) < 1e-3 && dot > 0.999;
+  if (!aligned) return 'corner';
+  return Math.abs(li - lo) < 1e-6 ? 'symmetric' : 'smooth';
+}
+
+/** Переместить сегмент целиком (оба узла и их ручки) на дельту. */
+export function moveSegment(path: SubPath[], ref: SegRef, delta: Vec2): SubPath[] {
+  const sp = path[ref.sub];
+  if (!sp) return path;
+  const count = sp.segs.length;
+  if (ref.index < 0 || ref.index >= count) return path;
+  // начало сегмента = узел index, конец = узел index+1 (для замкнутого index+1 по кругу)
+  const startRef: NodeRef = { sub: ref.sub, index: ref.index };
+  const endRef: NodeRef = { sub: ref.sub, index: ref.index + 1 };
+  let out = path;
+  const p0 = nodePoint(out, startRef);
+  if (p0) out = moveNode(out, startRef, { x: p0.x + delta.x, y: p0.y + delta.y });
+  const endNodeIndex = endRef.index >= count && sp.closed ? 0 : endRef.index;
+  const p1 = nodePoint(out, { sub: ref.sub, index: endNodeIndex });
+  if (p1) out = moveNode(out, { sub: ref.sub, index: endNodeIndex }, { x: p1.x + delta.x, y: p1.y + delta.y });
+  return out;
+}
+
+/** Соединить два узла: концы открытых подпутей склеиваются (или подпуть замыкается). */
+export function joinNodes(path: SubPath[], a: NodeRef, b: NodeRef): SubPath[] | null {
+  const spA = path[a.sub];
+  const spB = path[b.sub];
+  if (!spA || !spB) return null;
+  const pa = nodePoint(path, a);
+  const pb = nodePoint(path, b);
+  if (!pa || !pb) return null;
+  if (a.sub === b.sub && a.index === b.index) return null;
+
+  // «свободные» концы открытого подпути
+  const isHead = (sp: SubPath, ref: NodeRef): boolean => !sp.closed && ref.index === 0;
+  const isTail = (sp: SubPath, ref: NodeRef): boolean => !sp.closed && ref.index === sp.segs.length;
+
+  const out = path.map((sp) => ({ ...sp, segs: sp.segs.map((s) => ({ ...s })) }));
+
+  // замыкание одного подпути: соединяем его начало и конец
+  if (a.sub === b.sub && !spA.closed && ((isHead(spA, a) && isTail(spA, b)) || (isHead(spA, b) && isTail(spA, a)))) {
+    const sp = out[a.sub];
+    const last = sp.segs[sp.segs.length - 1];
+    if (last) sp.segs.push({ t: 'l', a: last.b, b: sp.start });
+    sp.closed = true;
+    return out;
+  }
+
+  // склейка двух открытых подпутей в один
+  if (spA.closed || spB.closed) return null;
+  const tailA = isTail(spA, a) ? a : isTail(spA, b) ? b : null;
+  const tailB = isTail(spB, a) ? a : isTail(spB, b) ? b : null;
+  const headA = isHead(spA, a) ? a : isHead(spA, b) ? b : null;
+  const headB = isHead(spB, a) ? a : isHead(spB, b) ? b : null;
+  if (!tailA || !headB) return null;
+
+  // A (хвост) → B (начало)
+  const first = out[tailA.sub];
+  const second = out[headB.sub];
+  if (tailA.sub === headB.sub) return null;
+  const bridge: Vec2 = nodePoint(out, tailA) ?? pa;
+  const so = [...first.segs, { t: 'l' as const, a: bridge, b: nodePoint(out, headB) ?? pb }, ...second.segs];
+  const merged: SubPath = { closed: false, start: first.start, segs: so };
+  const keep = out.map((sp, i) => (i === tailA.sub ? merged : i === headB.sub ? null : sp)).filter((sp): sp is SubPath => !!sp);
+  void headA; void tailB;
+  return keep;
+}
+
+/** Развернуть направление подпути (старт и концы сегментов меняются местами). */
+export function reverseSubPath(path: SubPath[], sub: number): SubPath[] {
+  const sp = path[sub];
+  if (!sp || !sp.segs.length) return path;
+  const rev = [...sp.segs].reverse().map((s): Seg => {
+    if (s.t === 'l') return { t: 'l', a: { ...s.b }, b: { ...s.a } };
+    if (s.t === 'c') return { t: 'c', a: { ...s.b }, c1: { ...s.c2 }, c2: { ...s.c1 }, b: { ...s.a } };
+    return { t: 'a', a: { ...s.b }, b: { ...s.a }, center: { ...s.center }, r: s.r, a0: s.a0 + s.sweep, sweep: -s.sweep };
+  });
+  // у замкнутого подпути точка старта остаётся на месте: поворачиваем список к прежнему старту
+  let start = sp.start;
+  if (sp.closed) {
+    const sameStart = rev.findIndex((s) => dist(s.a, sp.start) < 1e-9);
+    if (sameStart > 0) rev.unshift(...rev.splice(sameStart));
+    else if (sameStart < 0) start = rev[0].a;
+    if (sameStart !== 0) start = rev[0].a;
+  } else {
+    start = rev[0].a;
+  }
+  return path.map((p, i) => (i === sub ? { closed: p.closed, start, segs: rev } : p));
+}
+
+/** Выровнять узлы по первой координате (по X — одинаковая X, по Y — одинаковая Y). */
+export function alignNodes(path: SubPath[], refs: NodeRef[], axis: 'x' | 'y'): SubPath[] {
+  if (refs.length < 2) return path;
+  const pts = refs.map((r) => nodePoint(path, r)).filter((p): p is Vec2 => !!p);
+  if (pts.length < 2) return path;
+  const target = axis === 'x' ? pts[0].x : pts[0].y;
+  let out = path;
+  for (const ref of refs) {
+    const pts2 = pathNodes(out).find((n) => n.ref.sub === ref.sub && n.ref.index === ref.index);
+    if (!pts2) continue;
+    const to = axis === 'x' ? { x: target, y: pts2.p.y } : { x: pts2.p.x, y: target };
+    out = moveNode(out, ref, to);
+  }
+  return out;
+}
+
+/** Сегмент под точкой (локальные координаты) — для выделения и перетаскивания. */
+export function nearestSegment(path: SubPath[], p: Vec2, tol = 0.5): SegRef | null {
+  const hit = nearestOnPath(path, p, tol);
+  return hit ? { sub: hit.sub, index: hit.seg } : null;
 }

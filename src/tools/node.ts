@@ -3,7 +3,8 @@ import { apply, invert } from '../core/geom/transform';
 import {
   pathNodes, moveNodes, deleteNode, splitSegment, toCurve, toLine, toggleClosed, breakAt,
   nodeHandles, moveNodeHandle, setNodeType, nodesInBox, nodePoint,
-  type NodeRef, type NodeType,
+  nodeTypeAt, moveSegment, joinNodes, reverseSubPath, alignNodes, nearestSegment, moveNode,
+  type NodeRef, type NodeType, type SegRef,
 } from '../core/geom/nodeEdit';
 import { nearestOnPath, normBox } from '../core/geom/path';
 import { updateCmd } from '../state/history';
@@ -16,6 +17,8 @@ export interface NodeToolState {
   /** все выделенные узлы (мультивыделение, как в CorelDRAW) */
   selected: NodeRef[];
   hover: NodeRef | null;
+  /** выделенный сегмент (как в CorelDRAW: клик по кривой выделяет сегмент) */
+  segment: SegRef | null;
   /** рамка выделения узлов (в локальных координатах объекта) */
   marquee: Box | null;
   /** тип, в котором тянется ручка: corner — независимо, smooth/symmetric — с зеркалом */
@@ -26,12 +29,13 @@ export const nodeToolState: NodeToolState = {
   objectId: null,
   active: null,
   selected: [],
+  segment: null,
   hover: null,
   marquee: null,
   handleType: 'smooth',
 };
 
-type Mode = 'idle' | 'nodes' | 'handle' | 'marquee';
+type Mode = 'idle' | 'nodes' | 'handle' | 'marquee' | 'segment';
 
 let mode: Mode = 'idle';
 let beforeObj: Obj | null = null;
@@ -124,6 +128,7 @@ export const nodeTool: Tool = {
         return;
       }
       if (!nodeToolState.selected.some((r) => sameRef(r, hit))) nodeToolState.selected = [hit];
+      nodeToolState.segment = null;
       nodeToolState.active = hit;
       nodeToolState.hover = hit;
       mode = 'nodes';
@@ -148,8 +153,19 @@ export const nodeTool: Tool = {
       }
     }
 
-    // 3) клик по пустому месту — рамка выделения узлов
-    if (!ev.shiftKey) clearSelection();
+    // 3) клик по кривой — выделяем сегмент и можем его тянуть
+    const segHit = nearestSegment(obj.path, dragStart, c.view.px(6));
+    if (segHit) {
+      nodeToolState.segment = segHit;
+      if (!ev.shiftKey) clearSelection();
+      mode = 'segment';
+      c.setCursor('grabbing');
+      c.render('overlay');
+      return;
+    }
+
+    // 4) клик по пустому месту — рамка выделения узлов
+    if (!ev.shiftKey) { clearSelection(); nodeToolState.segment = null; }
     mode = 'marquee';
     nodeToolState.marquee = normBox(dragStart, dragStart);
     c.render('overlay');
@@ -159,6 +175,15 @@ export const nodeTool: Tool = {
     const obj = targetObject(c);
     if (!obj) return;
     const local = apply(invert(beforeObj && mode !== 'idle' ? beforeObj.transform : obj.transform), p);
+
+    if (mode === 'segment' && beforeObj && nodeToolState.segment) {
+      const delta = { x: local.x - dragStart.x, y: local.y - dragStart.y };
+      const path = moveSegment(beforeObj.path, nodeToolState.segment, delta);
+      c.store.preview([{ kind: 'update', before: obj, after: { ...beforeObj, path } }]);
+      c.setStatus(`Сегмент → ${delta.x.toFixed(1)}, ${delta.y.toFixed(1)} мм`);
+      c.render('both');
+      return;
+    }
 
     if (mode === 'nodes' && beforeObj && nodeToolState.selected.length) {
       const delta = { x: local.x - dragStart.x, y: local.y - dragStart.y };
@@ -202,7 +227,7 @@ export const nodeTool: Tool = {
       }
       nodeToolState.marquee = null;
     }
-    if ((mode === 'nodes' || mode === 'handle') && beforeObj) {
+    if ((mode === 'nodes' || mode === 'handle' || mode === 'segment') && beforeObj) {
       const current = c.store.state.doc.objects[beforeObj.id];
       if (current && current !== beforeObj) {
         c.store.commit(updateCmd('Правка узлов', [{ before: beforeObj, after: current }]));
@@ -255,6 +280,45 @@ export function nodeOpDelete(c: ToolCtx): void {
   clearSelection();
 }
 
+/** Выровнять выделенные узлы по X или по Y. */
+export function nodeOpAlign(c: ToolCtx, axis: 'x' | 'y'): void {
+  const refs = refsToEdit();
+  if (refs.length < 2) { c.setStatus('Выделите минимум два узла (Shift+клик или рамка)'); return; }
+  applyNodeOp(c, (obj) => alignNodes(obj.path, refs, axis));
+}
+
+/** Соединить два выделенных узла (концы открытых подпутей). */
+export function nodeOpJoin(c: ToolCtx): void {
+  const refs = refsToEdit();
+  if (refs.length !== 2) { c.setStatus('Выделите ровно два узла и нажмите «Соединить»'); return; }
+  applyNodeOp(c, (obj) => joinNodes(obj.path, refs[0], refs[1]) ?? obj.path);
+}
+
+/** Развернуть направление подпути. */
+export function nodeOpReverse(c: ToolCtx): void {
+  const sub = nodeToolState.active?.sub ?? nodeToolState.segment?.sub ?? 0;
+  applyNodeOp(c, (obj) => reverseSubPath(obj.path, sub));
+}
+
+/** Точные координаты активного узла (мировые мм). */
+export function nodeOpSetPos(c: ToolCtx, x: number, y: number): void {
+  const obj = targetObject(c);
+  const ref = nodeToolState.active;
+  if (!obj || !ref) return;
+  const local = apply(invert(obj.transform), { x, y });
+  const path = moveNode(obj.path, ref, local);
+  if (JSON.stringify(path) === JSON.stringify(obj.path)) return;
+  commitPath(c, obj, path);
+  c.render('both');
+}
+
+/** Сдвиг выделенных узлов стрелками. */
+export function nodeNudge(c: ToolCtx, dx: number, dy: number): void {
+  const refs = refsToEdit();
+  if (!refs.length) return;
+  applyNodeOp(c, (obj) => moveNodes(obj.path, refs, { x: dx, y: dy }));
+}
+
 /** Гладкий / симметричный / угловой узел — для всех выделенных узлов сразу. */
 export function nodeOpType(c: ToolCtx, type: NodeType): void {
   const refs = refsToEdit();
@@ -286,3 +350,6 @@ function applyNodeOp(c: ToolCtx, fn: (obj: Obj) => SubPath[]): void {
 
 /** Экспорт для отрисовки: точка узла в локальных координатах. */
 export const nodeLocalPoint = nodePoint;
+
+/** Экспорт для отрисовки: тип узла и выделенный сегмент. */
+export const nodeTypeOf = nodeTypeAt;

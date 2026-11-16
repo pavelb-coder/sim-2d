@@ -138,8 +138,18 @@
         <button class="ghost-btn" id="node-symmetric">Симметричный</button>
         <button class="ghost-btn" id="node-corner">Угловой</button>
       </div>
+      <div class="field-pair">
+        <div class="field"><label for="node-x">X узла, мм</label><input type="number" id="node-x" step="0.1"></div>
+        <div class="field"><label for="node-y">Y узла, мм</label><input type="number" id="node-y" step="0.1"></div>
+      </div>
+      <div class="btn-grid">
+        <button class="ghost-btn" id="node-align-x">Выровнять по X</button>
+        <button class="ghost-btn" id="node-align-y">Выровнять по Y</button>
+        <button class="ghost-btn" id="node-join">Соединить</button>
+        <button class="ghost-btn" id="node-reverse">Реверс</button>
+      </div>
       <button class="ghost-btn wide danger" id="node-delete">Удалить узел</button>
-      <p class="phint">Тяните узел мышью · Shift+клик — несколько узлов · рамка выделяет узлы · двойной клик по контуру добавляет узел · тяните круглые ручки, чтобы менять кривизну</p>
+      <p class="phint">Тяните узел или сегмент мышью · Shift+клик — несколько узлов · рамка выделяет узлы · двойной клик по контуру добавляет узел · стрелки сдвигают узлы · квадрат — угловой узел, круг — гладкий, ромб — симметричный</p>
     </section>
 
     <section class="pblock" data-panel="ops">

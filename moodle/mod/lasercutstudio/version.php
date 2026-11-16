@@ -25,7 +25,7 @@
 defined('MOODLE_INTERNAL') || die();
 
 $plugin->component = 'mod_lasercutstudio';
-$plugin->version   = 2026112200;
-$plugin->release   = '1.4.0 (2026-11-16)';
+$plugin->version   = 2026112300;
+$plugin->release   = '1.5.0 (2026-11-16)';
 $plugin->requires  = 2022112800; // Moodle 4.1 и новее.
 $plugin->maturity  = MATURITY_STABLE;

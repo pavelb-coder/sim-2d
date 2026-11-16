@@ -1,7 +1,7 @@
 {
   "generated": true,
   "source": "site/index.html",
-  "bytes": 515362,
-  "sha256": "9790598a9375",
+  "bytes": 537005,
+  "sha256": "8cd73853a2d5",
   "note": "Файл собирается скриптом scripts/moodle-sync-editor.mjs и не редактируется вручную."
 }

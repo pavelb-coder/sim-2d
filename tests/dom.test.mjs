@@ -111,6 +111,25 @@ ok(N0 >= 5, `демо-документ загружен (${count()})`);
 ok(text('#st-sheet').includes('300'), `лист в мм: ${text('#st-sheet')}`);
 ok($('#btn-undo').disabled === true, 'undo изначально недоступен (история пуста)');
 
+console.log('сборка одного файла');
+
+// Сборка вставляет бандл в HTML через String.replace. Один раз `$&` внутри
+// минифицированного кода раскрылся в строку-заглушку тега script — файл перестал
+// исполняться, а тесты этого не видели (они импортируют JS отдельно).
+const inlineScripts = [...window.document.querySelectorAll('script:not([src])')]
+  .map((el) => el.textContent ?? '')
+  .filter((t) => t.includes('use strict'));
+ok(inlineScripts.length === 1, `в сборке ровно один инлайн-скрипт приложения (${inlineScripts.length})`);
+let bundleParses = true;
+try {
+  new Function(inlineScripts[0]);
+} catch (e) {
+  bundleParses = false;
+  console.error(`    синтаксис бандла: ${e.message}`);
+}
+ok(bundleParses, 'инлайн-бандл парсится как JavaScript');
+ok(!html.includes('<script type="module" src='), 'в сборке нет заглушки dev-режима script src');
+
 console.log('draw');
 
 $('.tool-btn[data-tool="rect"]').click();

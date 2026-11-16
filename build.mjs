@@ -29,8 +29,20 @@ try {
   console.warn('шрифт не найден — инструмент «Текст» будет недоступен');
 }
 
-html = html.replace('<link rel="stylesheet" href="./styles.css">', `<style>\n${css}\n</style>`);
-html = html.replace('<script type="module" src="./main.ts"></script>', `${fontTag}<script>\n${js}\n</script>`);
+// ВАЖНО: заменяем только функциями-заменителями. Если передать строку, JavaScript
+// раскроет в ней `$&`, `$'`, `` $` `` и `$1` — а такие последовательности встречаются в
+// минифицированном коде (например `$&&x`). Один раз это подставило вместо `$&` саму
+// строку-заглушку тега script и сломало весь бандл (v1.0.4–1.2.0).
+html = html.replace('<link rel="stylesheet" href="./styles.css">', () => `<style>\n${css}\n</style>`);
+html = html.replace('<script type="module" src="./main.ts"></script>', () => `${fontTag}<script>\n${js}\n</script>`);
+
+// Самопроверка сборки: бандл должен попасть в файл байт в байт, а заглушки — исчезнуть.
+if (!html.includes(js)) {
+  throw new Error('сборка испорчена: бандл не попал в index.html целиком');
+}
+if (html.includes('<script type="module" src="./main.ts">') || html.includes('href="./styles.css"')) {
+  throw new Error('сборка испорчена: в index.html остались заглушки dev-режима');
+}
 
 await mkdir('site', { recursive: true });
 await mkdir('docs', { recursive: true });

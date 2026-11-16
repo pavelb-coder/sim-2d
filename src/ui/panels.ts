@@ -1,5 +1,6 @@
 import type { AppState, Store, ToolId } from '../state/store';
 import { TOOL_DEFS } from '../tools';
+import { initPalette } from './palette';
 import { SHEET_PRESETS } from '../core/doc';
 import { setBBox, rotateTo } from '../state/edits';
 import { updateCmd } from '../state/history';
@@ -237,6 +238,23 @@ export function initUI(store: Store, actions: UIActions): void {
   $('fill-angle').addEventListener('change', () => applyStyle({ fillAngle: val('fill-angle') }));
   syncFillRows();
 
+  /* ---------- блок «Цвет»: палитра и смеситель ---------- */
+  const palette = initPalette({
+    apply: (color, target) => {
+      if (target === 'stroke') {
+        applyStyle({ stroke: color ?? '#000000' });
+        return;
+      }
+      // палитра даёт сплошную заливку: градиент сбрасывается осознанно
+      applyStyle(color ? { fill: color, fillType: 'solid' } : { fill: null });
+    },
+    current: () => {
+      const objs = store.selected();
+      if (!objs.length) return null;
+      return { fill: objs[0].style.fill, stroke: objs[0].style.stroke };
+    },
+  });
+
   $('text-height').addEventListener('change', () => actions.setTextHeight(val('text-height')));
   bind('btn-text-path', () => actions.textOnPath(
     $<HTMLInputElement>('top-text').value,
@@ -293,6 +311,7 @@ export function initUI(store: Store, actions: UIActions): void {
     const sw = $<HTMLInputElement>('stroke-width');
     const fill = $<HTMLInputElement>('chk-fill');
     const fcol = $<HTMLInputElement>('fill-color');
+    palette.refresh();
     if (objs.length) {
       if (document.activeElement !== srgb) srgb.value = toHex(objs[0].style.stroke);
       if (document.activeElement !== sw) sw.value = String(objs[0].style.strokeWidth);

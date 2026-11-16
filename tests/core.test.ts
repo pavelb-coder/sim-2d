@@ -12,6 +12,7 @@ import { pathNodes, moveNode, deleteNode, splitSegment, toggleClosed, toCurve } 
 import { setFontData, ensureFont, textToPaths } from '../src/core/text';
 import { textOnPath } from '../src/core/textPath';
 import { angleOf, fillTypeOf, gradientLine, gradientRadius, secondColorOf } from '../src/core/fill';
+import { hexToHsl, hslToHex, normalizeHex } from '../src/core/color';
 import { nestObjects } from '../src/core/nest';
 import { createDoc, emptyStyle } from '../src/core/doc';
 import { ellipsePath, makeObj, rectPath } from '../src/core/shape';
@@ -616,6 +617,35 @@ test('заливка: типы, угол и осевая линия градие
   near(vertical.x0, 50, 1e-9);
 
   near(gradientRadius(box), Math.hypot(100, 40) / 2, 1e-9);
+});
+
+test('цвет: HEX ⇄ HSL для палитры и смесителя', () => {
+  assert.equal(normalizeHex('#ABC'), '#aabbcc');
+  assert.equal(normalizeHex('ff8800'), '#ff8800');
+  assert.equal(normalizeHex('#12345'), null);
+  assert.equal(normalizeHex('зелёный'), null);
+
+  assert.equal(hslToHex(0, 100, 50), '#ff0000');
+  assert.equal(hslToHex(120, 100, 50), '#00ff00');
+  assert.equal(hslToHex(240, 100, 50), '#0000ff');
+  assert.equal(hslToHex(0, 0, 0), '#000000');
+  assert.equal(hslToHex(0, 0, 100), '#ffffff');
+  // отрицательный и «перекрученный» оттенок приводится к 0…360
+  assert.equal(hslToHex(-120, 100, 50), hslToHex(240, 100, 50));
+  assert.equal(hslToHex(480, 100, 50), hslToHex(120, 100, 50));
+
+  const back = hexToHsl('#e53935');
+  assert.ok(back.h >= 0 && back.h < 360 && back.s > 50 && back.l > 30, `HSL из красного: ${JSON.stringify(back)}`);
+  // обратный перевод обязан попасть в тот же цвет (точность не теряется)
+  assert.equal(hslToHex(back.h, back.s, back.l), '#e53935');
+  for (const hex of ['#fb8c00', '#1e88e5', '#43a047', '#ffffff', '#000000', '#7f7f7f']) {
+    const hsl = hexToHsl(hex);
+    assert.equal(hslToHex(hsl.h, hsl.s, hsl.l), hex, `round-trip ${hex}`);
+  }
+  // серый — без насыщенности
+  const gray = hexToHsl('#808080');
+  assert.equal(gray.s, 0);
+  assert.ok(Math.abs(gray.l - 50) <= 1, `яркость серого ≈ 50%: ${gray.l}`);
 });
 
 test('трансформации: масштаб и поворот в матрице', () => {

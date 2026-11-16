@@ -276,6 +276,29 @@
       <p class="phint">Заливка и градиент видны на экране и в SVG; на резку (DXF) не влияют.</p>
     </section>
 
+    <section class="pblock" data-panel="color">
+      <h2>Цвет</h2>
+      <div class="color-current">
+        <div class="cc"><span class="cc-dot" id="cc-fill"></span>Заливка</div>
+        <div class="cc"><span class="cc-dot" id="cc-stroke"></span>Обводка</div>
+      </div>
+      <div class="palette" id="palette" role="group" aria-label="Палитра цветов"></div>
+      <p class="phint">Клик по образцу — заливка, правый клик или Shift+клик — обводка, крестик — без заливки. Палитра ставит сплошной цвет; градиент включается в блоке «Слой и стиль».</p>
+      <div class="mixer">
+        <div class="field-row"><label for="mix-h">Оттенок</label><input type="range" id="mix-h" min="0" max="360" value="210"></div>
+        <div class="field-row"><label for="mix-s">Насыщенность</label><input type="range" id="mix-s" min="0" max="100" value="70"></div>
+        <div class="field-row"><label for="mix-l">Яркость</label><input type="range" id="mix-l" min="0" max="100" value="60"></div>
+        <div class="mixer-row">
+          <span class="mix-preview" id="mix-preview" aria-hidden="true"></span>
+          <input type="text" id="mix-hex" value="#1e88e5" maxlength="7" spellcheck="false" aria-label="Цвет в HEX">
+        </div>
+        <div class="btn-row">
+          <button class="ghost-btn wide is-active" id="mix-to-fill">В заливку</button>
+          <button class="ghost-btn wide" id="mix-to-stroke">В обводку</button>
+        </div>
+      </div>
+    </section>
+
     <section class="pblock" data-panel="text" id="block-text">
       <h2>Текст</h2>
       <div class="field-row">

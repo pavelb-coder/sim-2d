@@ -21,6 +21,12 @@
 
 * { box-sizing: border-box; }
 
+/* Атрибут hidden обязан побеждать. Правило браузера [hidden] { display: none }
+   лежит в UA-таблице стилей и проигрывает любой авторской строке display, поэтому
+   .drop-zone { display: grid } делал подсказку «Отпустите DXF…» видимой всегда —
+   поверх листа висела голубая рамка, и убрать её было нечем. */
+[hidden] { display: none !important; }
+
 html, body {
   height: 100%;
   margin: 0;
